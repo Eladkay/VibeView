@@ -11,16 +11,23 @@ casting and photo sharing.
 - **Screen mirroring** — mirror the entire screen of an iPhone/iPad (Control
   Center → Screen Mirroring) or a Mac (Displays → Screen Mirroring), not just
   videos. Hardware H.264 decoding via MediaCodec.
-- **Mirroring audio** — the AAC-ELD audio stream that accompanies mirroring is
-  decoded and played in sync.
+- **Mirroring audio** — the audio accompanying mirroring is decoded and played
+  in sync. AAC-ELD (mirroring's usual codec), AAC-LC, ALAC, and raw PCM are all
+  handled; ALAC and Opus use the device's platform decoders where present.
+- **Low latency** — the video decoder runs in MediaCodec low-latency mode with a
+  small, drop-oldest frame backlog, and audio uses a low-latency AudioTrack, so
+  the mirrored image tracks the source closely and recovers fast after network
+  hiccups.
 - **Video casting** — tap the AirPlay icon in an app that shares plain video
   URLs (HLS or progressive) and VibeView plays the stream natively with
   ExoPlayer, honoring play/pause/seek from the sender. (DRM-protected apps
   like Netflix will not work — see limitations.)
 - **Photo casting** — share a photo from the iOS Photos app and it appears on
   the TV.
+- **Optional passcode** — require a code (shown on the TV) before a device can
+  mirror or cast, enforced with RTSP/HTTP Digest authentication.
 - **TV-friendly UI** — an idle screen with connection instructions, and a
-  D-pad settings screen (device name, audio toggle, start-on-boot).
+  D-pad settings screen (device name, audio toggle, passcode, start-on-boot).
 - Runs as a foreground service, so the TV stays discoverable while you use
   other apps, and (optionally) from boot.
 
@@ -107,10 +114,12 @@ and hands Annex-B video / raw audio frames to the app, which feeds them to
   Disney+, Apple TV+…) will refuse to cast or show a black screen. Mirroring
   the screen still works for everything that isn't HDCP-protected on the
   sender side.
-- **ALAC / Opus audio** (used by some audio-only senders) is not decoded yet —
-  such sessions play silently.
-- **No PIN/onscreen-code pairing** yet; any device on your network can
-  connect. Planned once the protocol core supports SRP pairing.
+- **ALAC / Opus** playback relies on the device's platform decoders. Most modern
+  Android TV devices ship them; where a decoder is missing, that audio path is
+  skipped (video keeps playing) rather than crashing.
+- The **passcode** uses AirPlay's password/Digest mechanism (advertised as
+  `pw=true`), not the AirPlay 2 SRP on-screen-code flow. The sender prompts for
+  the code shown on the TV; some senders cache it after the first entry.
 - One sender at a time; multi-room audio (AirPlay 2 group playback) is out of
   scope.
 - The AirPlay protocol is unofficial and reverse-engineered; new iOS/macOS
@@ -118,11 +127,21 @@ and hands Annex-B video / raw audio frames to the app, which feeds them to
 
 ## Development
 
-- `./gradlew :airplay:test` — protocol unit tests (framing, plists, FairPlay
-  vectors) run on any JDK 17+, no Android SDK needed.
+- `./gradlew :airplay:test` — protocol unit tests (framing, plists, digest auth,
+  FairPlay vectors) run on any JDK 17+, no Android SDK needed.
 - `./gradlew :app:assembleDebug` — needs an Android SDK. CI
   ([`.github/workflows/build.yml`](.github/workflows/build.yml)) runs this
   on every push and publishes the APK as an artifact.
+- `./gradlew :app:bundleRelease` — minified, signed release bundle. See
+  [`docs/PUBLISHING.md`](docs/PUBLISHING.md) for signing setup and the Play
+  Store / Android TV publishing checklist. **Smoke-test the release build on a
+  device** — R8 minification exercises the reverse-engineered libraries that CI's
+  debug build does not.
+
+## Privacy
+
+VibeView collects no personal data and sends nothing off the device; received
+media is held only in memory for playback. See [PRIVACY.md](PRIVACY.md).
 
 ## Legal
 

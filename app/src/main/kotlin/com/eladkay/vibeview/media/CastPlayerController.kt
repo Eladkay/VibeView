@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import com.eladkay.vibeview.airplay.CastState
 import com.eladkay.vibeview.airplay.CastStatus
@@ -20,7 +21,20 @@ class CastPlayerController(
     context: Context,
     private val onState: (CastState) -> Unit,
 ) {
-    val player: ExoPlayer = ExoPlayer.Builder(context).build()
+    // Small playback buffer so casting starts quickly after /play instead of
+    // pre-buffering several seconds first.
+    private val loadControl = DefaultLoadControl.Builder()
+        .setBufferDurationsMs(
+            /* minBufferMs = */ 15_000,
+            /* maxBufferMs = */ 30_000,
+            /* bufferForPlaybackMs = */ 500,
+            /* bufferForPlaybackAfterRebufferMs = */ 1_000,
+        )
+        .build()
+
+    val player: ExoPlayer = ExoPlayer.Builder(context)
+        .setLoadControl(loadControl)
+        .build()
 
     @Volatile var status: CastStatus = CastStatus()
         private set

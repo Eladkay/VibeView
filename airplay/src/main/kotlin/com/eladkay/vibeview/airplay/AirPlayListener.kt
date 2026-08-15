@@ -57,6 +57,7 @@ data class AirPlayAudioFormat(
     val sampleRate: Int,
     val channels: Int,
     val samplesPerFrame: Int,
+    val bitDepth: Int = 16,
 ) {
     enum class Compression { PCM, ALAC, AAC_LC, AAC_ELD, OPUS }
 
@@ -74,16 +75,19 @@ data class AirPlayAudioFormat(
             }
             // Format enum names look like AAC_ELD_44100_2 / PCM_48000_16_2 / ALAC_44100_16_2;
             // rate and channel count are always the trailing numeric fields.
+            // Format enum names encode rate/bit-depth/channels as trailing numbers,
+            // e.g. ALAC_44100_16_2, PCM_48000_24_2, AAC_ELD_44100_2, OPUS_48000_1.
             var sampleRate = 44100
             var channels = 2
+            var bitDepth = 16
             info.audioFormat?.let { format ->
                 val parts = format.name.split('_').mapNotNull { it.toIntOrNull() }
-                val numbers = parts.filter { it >= 8000 }
-                if (numbers.isNotEmpty()) sampleRate = numbers.first()
-                channels = parts.lastOrNull()?.takeIf { it in 1..8 } ?: 2
+                parts.firstOrNull { it >= 8000 }?.let { sampleRate = it }
+                parts.lastOrNull { it in 1..8 }?.let { channels = it }
+                parts.firstOrNull { it == 16 || it == 24 }?.let { bitDepth = it }
             }
             val spf = if (info.samplesPerFrame > 0) info.samplesPerFrame else 480
-            return AirPlayAudioFormat(compression, sampleRate, channels, spf)
+            return AirPlayAudioFormat(compression, sampleRate, channels, spf, bitDepth)
         }
     }
 }

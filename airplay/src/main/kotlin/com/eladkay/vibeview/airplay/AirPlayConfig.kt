@@ -20,4 +20,10 @@ data class AirPlayConfig(
     val mirrorDataPort: Int = 7102,
     /** Colon-separated pseudo-MAC identifying this receiver. Must stay stable across restarts. */
     val deviceId: String = "4A:56:56:42:56:57",
+    /**
+     * When non-null and non-blank, clients must authenticate with this passcode
+     * (RTSP/HTTP Digest) before mirroring or casting. The receiver advertises
+     * `pw=true` so senders prompt for it. Null disables authentication.
+     */
+    val password: String? = null,
 )

@@ -35,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var deviceNameView: TextView
     private lateinit var statusView: TextView
     private lateinit var instructionsView: TextView
+    private lateinit var passcodeView: TextView
 
     private var surfaceReady = false
 
@@ -63,6 +64,7 @@ class MainActivity : AppCompatActivity() {
         deviceNameView = findViewById(R.id.device_name)
         statusView = findViewById(R.id.status_line)
         instructionsView = findViewById(R.id.instructions)
+        passcodeView = findViewById(R.id.passcode_line)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -117,6 +119,13 @@ class MainActivity : AppCompatActivity() {
         val info = ReceiverSessionHub.serverInfo.value
         deviceNameView.text = info.deviceName
         instructionsView.text = getString(R.string.idle_instructions, info.deviceName)
+        val passcode = info.passcode
+        if (passcode != null) {
+            passcodeView.visibility = View.VISIBLE
+            passcodeView.text = getString(R.string.passcode_prompt, passcode)
+        } else {
+            passcodeView.visibility = View.GONE
+        }
         statusView.text = when {
             !info.running -> getString(R.string.status_starting)
             info.hostAddress != null -> getString(R.string.status_ready, info.hostAddress)

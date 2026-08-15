@@ -28,7 +28,13 @@ sealed interface ReceiverState {
 }
 
 /** Info shown on the idle screen. */
-data class ServerInfo(val deviceName: String, val hostAddress: String?, val running: Boolean)
+data class ServerInfo(
+    val deviceName: String,
+    val hostAddress: String?,
+    val running: Boolean,
+    /** Passcode to display when the receiver requires one; null when open. */
+    val passcode: String? = null,
+)
 
 /**
  * Process-wide bridge between the AirPlay server (Netty threads), the media pipeline,

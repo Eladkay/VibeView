@@ -56,6 +56,9 @@ internal class AirPlayAdvertiser(private val config: AirPlayConfig) {
             .flatMap { it.inetAddresses.asSequence() }
             .firstOrNull { it is Inet4Address && !it.isLoopbackAddress && it.isSiteLocalAddress }
 
+    private val passwordProtected: String
+        get() = if (!config.password.isNullOrEmpty()) "true" else "false"
+
     private fun airplayProps(): Map<String, String> = mapOf(
         "deviceid" to config.deviceId,
         "features" to FEATURES,
@@ -63,7 +66,7 @@ internal class AirPlayAdvertiser(private val config: AirPlayConfig) {
         "flags" to "0x4",
         "vv" to "2",
         "model" to MODEL,
-        "pw" to "false",
+        "pw" to passwordProtected,
         "rhd" to "5.6.0.0",
         "pk" to PUBLIC_KEY,
         "pi" to PAIRING_ID,
@@ -79,7 +82,7 @@ internal class AirPlayAdvertiser(private val config: AirPlayConfig) {
         "am" to MODEL,
         "md" to "0,1,2",
         "rhd" to "5.6.0.0",
-        "pw" to "false",
+        "pw" to passwordProtected,
         "sr" to "44100",
         "ss" to "16",
         "sv" to "false",

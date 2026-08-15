@@ -138,6 +138,9 @@ internal object MirroringReceiver {
                 }
             })
             .childOption(ChannelOption.TCP_NODELAY, true)
+            // The mirror stream is bursty (whole frames arrive at once); a large
+            // receive buffer keeps TCP from stalling the sender and adding latency.
+            .childOption(ChannelOption.SO_RCVBUF, 4 * 1024 * 1024)
             .option(ChannelOption.SO_REUSEADDR, true)
         val channel = bootstrap.bind().sync().channel()
         log.info("Mirror data receiver listening on port {}", port)

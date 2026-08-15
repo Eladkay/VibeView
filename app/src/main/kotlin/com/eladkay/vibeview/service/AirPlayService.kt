@@ -58,9 +58,11 @@ class AirPlayService : Service() {
 
     private fun startServer() {
         val deviceName = Prefs.deviceName(this)
+        val passcode = if (Prefs.requirePasscode(this)) Prefs.passcode(this) else null
         val config = AirPlayConfig(
             serverName = deviceName,
             deviceId = Prefs.deviceId(this),
+            password = passcode,
         )
         ReceiverSessionHub.audioEnabled = Prefs.audioEnabled(this)
 
@@ -72,12 +74,12 @@ class AirPlayService : Service() {
                 newServer.start(address)
                 server = newServer
                 ReceiverSessionHub.updateServerInfo(
-                    ServerInfo(deviceName, address?.hostAddress, running = true)
+                    ServerInfo(deviceName, address?.hostAddress, running = true, passcode = passcode)
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start AirPlay server", e)
                 ReceiverSessionHub.updateServerInfo(
-                    ServerInfo(deviceName, null, running = false)
+                    ServerInfo(deviceName, null, running = false, passcode = passcode)
                 )
                 stopSelf()
             }

@@ -22,7 +22,9 @@ import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.handler.codec.http.DefaultFullHttpResponse
 import io.netty.handler.codec.http.FullHttpRequest
 import io.netty.handler.codec.http.FullHttpResponse
+import io.netty.handler.codec.http.HttpHeaderNames
 import io.netty.handler.codec.http.HttpObjectAggregator
+import io.netty.handler.codec.http.HttpResponseStatus
 import io.netty.handler.codec.http.HttpUtil
 import io.netty.handler.codec.rtsp.RtspDecoder
 import io.netty.handler.codec.rtsp.RtspEncoder
@@ -47,12 +49,21 @@ internal class ControlHandler(
 ) : SimpleChannelInboundHandler<FullHttpRequest>() {
 
     private var currentSession: Session? = null
+    private val digestAuth = DigestAuth(DigestAuth.REALM, config.password)
 
     override fun channelRead0(ctx: ChannelHandlerContext, request: FullHttpRequest) {
         val sessionKey = request.headers().get(HEADER_ACTIVE_REMOTE)
             ?: (ctx.channel().remoteAddress() as? InetSocketAddress)?.address?.hostAddress
         val session = sessions.session(sessionKey)
         currentSession = session
+
+        if (!digestAuth.isAuthorized(request.method().name(), request.headers().get(HttpHeaderNames.AUTHORIZATION))) {
+            val challenge = createResponse(request)
+            challenge.status = HttpResponseStatus.UNAUTHORIZED
+            challenge.headers().add(HttpHeaderNames.WWW_AUTHENTICATE, digestAuth.challenge())
+            send(ctx, request, challenge)
+            return
+        }
 
         val response = createResponse(request)
         val uri = request.uri().substringBefore('?')

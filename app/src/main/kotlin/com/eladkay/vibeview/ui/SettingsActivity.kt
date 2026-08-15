@@ -45,10 +45,18 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         override fun onSharedPreferenceChanged(prefs: SharedPreferences?, key: String?) {
+            val ctx = context ?: return
             when (key) {
-                // The Bonjour name and the audio pipeline are wired at server start.
-                Prefs.KEY_DEVICE_NAME, Prefs.KEY_AUDIO_ENABLED ->
-                    context?.let { AirPlayService.restart(it) }
+                Prefs.KEY_REQUIRE_PASSCODE -> {
+                    if (Prefs.requirePasscode(ctx)) {
+                        // Generate and reveal a code so the field isn't blank.
+                        findPreference<EditTextPreference>(Prefs.KEY_PASSCODE)?.text = Prefs.passcode(ctx)
+                    }
+                    AirPlayService.restart(ctx)
+                }
+                // The Bonjour name, audio pipeline, and passcode are all wired at server start.
+                Prefs.KEY_DEVICE_NAME, Prefs.KEY_AUDIO_ENABLED, Prefs.KEY_PASSCODE ->
+                    AirPlayService.restart(ctx)
             }
         }
     }

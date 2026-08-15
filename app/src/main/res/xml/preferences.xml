@@ -21,4 +21,20 @@
             android:summary="@string/settings_autostart_summary"
             android:title="@string/settings_autostart" />
     </PreferenceCategory>
+
+    <PreferenceCategory android:title="@string/settings_category_security">
+
+        <SwitchPreferenceCompat
+            android:defaultValue="false"
+            android:key="require_passcode"
+            android:summary="@string/settings_passcode_summary"
+            android:title="@string/settings_passcode" />
+
+        <EditTextPreference
+            android:dependency="require_passcode"
+            android:inputType="numberPassword"
+            android:key="passcode"
+            android:title="@string/settings_passcode_value"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceCategory>
 </PreferenceScreen>

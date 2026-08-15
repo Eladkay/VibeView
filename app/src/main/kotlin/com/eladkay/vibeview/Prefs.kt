@@ -5,11 +5,14 @@ import android.content.SharedPreferences
 import android.provider.Settings
 import androidx.preference.PreferenceManager
 import java.util.Locale
+import kotlin.random.Random
 
 object Prefs {
     const val KEY_DEVICE_NAME = "device_name"
     const val KEY_AUDIO_ENABLED = "audio_enabled"
     const val KEY_AUTOSTART = "autostart"
+    const val KEY_REQUIRE_PASSCODE = "require_passcode"
+    const val KEY_PASSCODE = "passcode"
 
     fun get(context: Context): SharedPreferences =
         PreferenceManager.getDefaultSharedPreferences(context)
@@ -23,6 +26,23 @@ object Prefs {
 
     fun autostart(context: Context): Boolean =
         get(context).getBoolean(KEY_AUTOSTART, true)
+
+    fun requirePasscode(context: Context): Boolean =
+        get(context).getBoolean(KEY_REQUIRE_PASSCODE, false)
+
+    /**
+     * The passcode senders must enter when [requirePasscode] is on. A 4-digit code
+     * is generated and persisted the first time it's needed so it stays stable.
+     */
+    fun passcode(context: Context): String {
+        val prefs = get(context)
+        var code = prefs.getString(KEY_PASSCODE, null)
+        if (code.isNullOrBlank() || code.length != 4 || code.any { !it.isDigit() }) {
+            code = String.format(Locale.US, "%04d", Random.nextInt(10000))
+            prefs.edit().putString(KEY_PASSCODE, code).apply()
+        }
+        return code
+    }
 
     /**
      * Stable pseudo-MAC advertised as the AirPlay device id, derived from ANDROID_ID

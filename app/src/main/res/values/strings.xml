@@ -8,6 +8,7 @@
     <string name="status_starting">Starting receiver…</string>
     <string name="status_no_network">No network connection found</string>
     <string name="photo_content_description">Photo shared over AirPlay</string>
+    <string name="passcode_prompt">Passcode: %1$s</string>
 
     <string name="notification_channel">AirPlay receiver</string>
     <string name="notification_text">Discoverable as “%1$s”</string>
@@ -18,4 +19,9 @@
     <string name="settings_audio_summary">Play the sound sent with screen mirroring</string>
     <string name="settings_autostart">Start on boot</string>
     <string name="settings_autostart_summary">Make this TV AirPlay-discoverable after it restarts</string>
+
+    <string name="settings_category_security">Security</string>
+    <string name="settings_passcode">Require passcode</string>
+    <string name="settings_passcode_summary">Ask connecting devices for a code shown on this screen</string>
+    <string name="settings_passcode_value">Passcode</string>
 </resources>

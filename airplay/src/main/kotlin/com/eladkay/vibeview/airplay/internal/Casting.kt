@@ -42,6 +42,8 @@ internal class CastHandler(
     private val listener: AirPlayListener,
 ) : SimpleChannelInboundHandler<FullHttpRequest>() {
 
+    private val digestAuth = DigestAuth(DigestAuth.REALM, config.password)
+
     override fun channelRead0(ctx: ChannelHandlerContext, request: FullHttpRequest) {
         val sessionKey = request.headers().get(HEADER_SESSION_ID)
             ?: request.headers().get(HEADER_ACTIVE_REMOTE)
@@ -55,6 +57,21 @@ internal class CastHandler(
 
         if (path == "/reverse") {
             handleReverse(ctx, session)
+            return
+        }
+
+        // Gate the content-initiating endpoints behind the passcode; discovery,
+        // pairing, and the reverse channel stay open so the sender can reach the
+        // challenge and prompt for the code.
+        if ((path == "/play" || path == "/photo") &&
+            !digestAuth.isAuthorized(method.name(), request.headers().get(HttpHeaderNames.AUTHORIZATION))
+        ) {
+            val challenge = okResponse()
+            challenge.status = HttpResponseStatus.UNAUTHORIZED
+            challenge.headers().set(HttpHeaderNames.WWW_AUTHENTICATE, digestAuth.challenge())
+            HttpUtil.setContentLength(challenge, 0)
+            val future = ctx.writeAndFlush(challenge)
+            if (!HttpUtil.isKeepAlive(request)) future.addListener(ChannelFutureListener.CLOSE)
             return
         }
 

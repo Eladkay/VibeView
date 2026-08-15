@@ -2,6 +2,7 @@ package com.eladkay.vibeview.media
 
 import android.media.MediaCodec
 import android.media.MediaFormat
+import android.os.Build
 import android.util.Log
 import android.view.Surface
 import java.util.concurrent.ArrayBlockingQueue
@@ -70,6 +71,14 @@ class VideoDecoder(
             val outputSurface = surface ?: return
             codec = MediaCodec.createDecoderByType(MIME)
             val format = MediaFormat.createVideoFormat(MIME, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+            // Prioritize latency over throughput: realtime priority, a high operating
+            // rate hint, and (API 30+) the decoder's dedicated low-latency mode, which
+            // disables frame reordering/buffering so frames surface as soon as decoded.
+            format.setInteger(MediaFormat.KEY_PRIORITY, 0)
+            format.setInteger(MediaFormat.KEY_OPERATING_RATE, Short.MAX_VALUE.toInt())
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+            }
             codec.configure(format, outputSurface, null, 0)
             codec.start()
 
@@ -154,7 +163,11 @@ class VideoDecoder(
     companion object {
         private const val TAG = "VideoDecoder"
         private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
-        private const val QUEUE_CAPACITY = 120
+
+        // Small backlog: in steady state the decoder keeps the queue near empty, so
+        // this mainly bounds catch-up lag after a network burst — drop-oldest re-syncs
+        // on the next keyframe rather than replaying seconds of stale frames.
+        private const val QUEUE_CAPACITY = 12
         private const val INPUT_TIMEOUT_US = 20_000L
         private const val DEFAULT_WIDTH = 1920
         private const val DEFAULT_HEIGHT = 1080
