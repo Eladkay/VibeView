@@ -32,24 +32,27 @@ casting and photo sharing.
 
 ## Install
 
-**From CI:** every push builds a debug APK — grab the `vibeview-debug-apk`
-artifact from the GitHub Actions run and sideload it:
-
-```sh
-adb connect <tv-ip>
-adb install app-debug.apk
-```
-
-**From source:** with an Android SDK installed (Android Studio or
-`ANDROID_HOME` set):
+**From source:** with an Android SDK installed (Android Studio, or
+`ANDROID_HOME`/`ANDROID_SDK_ROOT` set):
 
 ```sh
 ./gradlew :app:assembleDebug
+adb connect <tv-ip>
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
 The protocol module is pure JVM and can be built and tested with nothing but
 a JDK: `./gradlew :airplay:test`.
+
+**CI:** a ready-to-use GitHub Actions workflow lives at
+[`ci/build.yml`](ci/build.yml) — it runs the protocol tests, assembles the
+debug APK, and uploads it as an artifact. Copy it into `.github/workflows/`
+to enable it (it isn't committed there directly because pushing workflow
+files requires a token with the `workflow` scope):
+
+```sh
+mkdir -p .github/workflows && cp ci/build.yml .github/workflows/
+```
 
 ## Usage
 

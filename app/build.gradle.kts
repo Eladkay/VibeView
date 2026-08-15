@@ -28,6 +28,9 @@ android {
 
     kotlinOptions {
         jvmTarget = "11"
+        // Media3's ExoPlayer/PlayerView surface is annotated @UnstableApi
+        // (@RequiresOptIn level=ERROR); opt in module-wide.
+        freeCompilerArgs += "-opt-in=androidx.media3.common.util.UnstableApi"
     }
 
     packaging {
