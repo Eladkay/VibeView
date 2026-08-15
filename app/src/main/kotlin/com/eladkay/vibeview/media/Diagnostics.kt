@@ -27,6 +27,19 @@ object Diagnostics {
     @Volatile var videoHeight: Int = 0
     @Volatile var audioFormat: String = "—"
 
+    /** Recent protocol events, newest last, for the on-screen handshake trace. */
+    private val trace = ArrayDeque<String>()
+    private const val TRACE_LIMIT = 14
+
+    @Synchronized
+    fun addTrace(message: String) {
+        trace.addLast(message)
+        while (trace.size > TRACE_LIMIT) trace.removeFirst()
+    }
+
+    @Synchronized
+    fun traceLines(): List<String> = trace.toList()
+
     private var lastSampleNanos = 0L
     private var lastFramesReceived = 0L
     private var lastFramesDecoded = 0L
@@ -58,7 +71,7 @@ object Diagnostics {
 
     fun setQueueDepth(depth: Int) = queueDepth.set(depth)
 
-    /** Clears everything for a new session. */
+    /** Clears media counters for a new session; the protocol trace is kept. */
     fun reset() {
         framesReceived.set(0)
         framesDecoded.set(0)

@@ -72,7 +72,11 @@ internal class ControlHandler(
         val response = createResponse(request)
         val uri = request.uri().substringBefore('?')
         val method = request.method()
-        log.info("Control {} {} ({})", method, request.uri(), request.protocolVersion().text())
+        val localPort = (ctx.channel().localAddress() as? InetSocketAddress)?.port ?: 0
+        log.info("Control {} {} ({}) on :{}", method, request.uri(), request.protocolVersion().text(), localPort)
+        listener.onProtocolEvent(
+            ":$localPort ${method.name()} $uri ${request.protocolVersion().text()}" + bodySummary(uri, request)
+        )
 
         try {
             when {
@@ -114,10 +118,27 @@ internal class ControlHandler(
             }
         } catch (e: Exception) {
             log.error("Error handling control request {} {}", method, request.uri(), e)
+            listener.onProtocolEvent("  !! ${method.name()} failed: ${e.javaClass.simpleName}: ${e.message}")
             response.setStatus(RtspResponseStatuses.INTERNAL_SERVER_ERROR)
         }
 
         send(ctx, request, response)
+    }
+
+    /**
+     * For the handshake endpoints, records the body size and first bytes. This
+     * distinguishes the pairing protocol in use: legacy pair-setup sends an empty
+     * body, whereas the newer SRP/HomeKit flow sends a TLV8 payload that this
+     * receiver does not implement.
+     */
+    private fun bodySummary(uri: String, request: FullHttpRequest): String {
+        if (!uri.startsWith("/pair") && !uri.startsWith("/fp")) return ""
+        val content = request.content()
+        val length = content.readableBytes()
+        if (length == 0) return " body=empty"
+        val preview = ByteArray(minOf(length, 8))
+        content.getBytes(content.readerIndex(), preview)
+        return " body=${length}B[${preview.joinToString("") { "%02x".format(it) }}]"
     }
 
     private fun handleSetup(session: Session, request: FullHttpRequest, response: DefaultFullHttpResponse) {
@@ -211,7 +232,18 @@ internal class ControlHandler(
         if (wasActive) listener.onAudioStopped()
     }
 
+    override fun channelActive(ctx: ChannelHandlerContext) {
+        val localPort = (ctx.channel().localAddress() as? InetSocketAddress)?.port ?: 0
+        val remote = (ctx.channel().remoteAddress() as? InetSocketAddress)?.address?.hostAddress
+        log.info("Control connection from {} on :{}", remote, localPort)
+        listener.onProtocolEvent("── connected $remote → :$localPort")
+        super.channelActive(ctx)
+    }
+
     override fun channelInactive(ctx: ChannelHandlerContext) {
+        val localPort = (ctx.channel().localAddress() as? InetSocketAddress)?.port ?: 0
+        log.info("Control connection closed on :{}", localPort)
+        listener.onProtocolEvent("── disconnected :$localPort")
         // The control connection dropping means the client is gone: tear its streams down.
         currentSession?.let { session ->
             stopAudioAndNotify(session)
@@ -222,6 +254,7 @@ internal class ControlHandler(
 
     override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
         log.warn("Control connection error", cause)
+        listener.onProtocolEvent("  !! connection error: ${cause.javaClass.simpleName}: ${cause.message}")
         ctx.close()
     }
 

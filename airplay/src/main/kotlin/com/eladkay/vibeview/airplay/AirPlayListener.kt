@@ -8,6 +8,12 @@ import com.github.serezhka.jap2lib.rtsp.AudioStreamInfo
  */
 interface AirPlayListener {
 
+    /**
+     * A protocol-level event (a control request, connection open/close, or error),
+     * already formatted for display. Used to trace a handshake that fails partway.
+     */
+    fun onProtocolEvent(message: String) {}
+
     /** A mirroring session completed RTSP SETUP for video. */
     fun onMirroringStarted() {}
 

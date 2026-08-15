@@ -27,7 +27,8 @@
 
     <string name="settings_category_advanced">Advanced</string>
     <string name="settings_diagnostics">Show diagnostics</string>
-    <string name="settings_diagnostics_summary">Overlay frame rate, bitrate, and decoder latency during playback</string>
+    <string name="settings_diagnostics_summary">Overlay the connection trace, frame rate, bitrate, and decoder latency</string>
+    <string name="diagnostics_waiting">waiting for a device to connect…</string>
 
     <string name="settings_category_security">Security</string>
     <string name="settings_passcode">Require passcode</string>

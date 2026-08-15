@@ -133,7 +133,8 @@ internal class CastHandler(
                     response.headers().set(HttpHeaderNames.CONTENT_TYPE, ControlHandler.CONTENT_TYPE_BINARY_PLIST)
                 }
                 else -> {
-                    log.info("Unhandled cast request {} {}", method, request.uri())
+                    log.info("Unhandled request {} {}", method, request.uri())
+                    listener.onProtocolEvent("  !! 404 ${method.name()} ${request.uri().substringBefore('?')}")
                     response.setStatus(HttpResponseStatus.NOT_FOUND)
                 }
             }

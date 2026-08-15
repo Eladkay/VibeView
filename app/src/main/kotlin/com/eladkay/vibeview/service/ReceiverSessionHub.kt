@@ -78,6 +78,9 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
 
     private const val TAG = "ReceiverSessionHub"
 
+    /** Fixed logcat tag for the protocol trace: `adb logcat -s VibeView`. */
+    const val PROTOCOL_TAG = "VibeView"
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val _state = MutableStateFlow<ReceiverState>(ReceiverState.Idle)
@@ -126,6 +129,17 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
     }
 
     // ---- Mirroring (called on Netty threads) ----
+
+    /**
+     * Protocol trace. Logged under a fixed "VibeView" tag — SLF4J's Android binding
+     * abbreviates logger names into unrecognisable log tags, which makes the library's
+     * own logs impractical to filter for — and mirrored to the diagnostics overlay so a
+     * failing handshake can be read off the TV without adb.
+     */
+    override fun onProtocolEvent(message: String) {
+        Log.i(PROTOCOL_TAG, message)
+        Diagnostics.addTrace(message)
+    }
 
     override fun onMirroringStarted() {
         Log.i(TAG, "Mirroring started")

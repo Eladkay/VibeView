@@ -218,9 +218,19 @@ class MainActivity : AppCompatActivity() {
     private suspend fun runDiagnosticsLoop() {
         while (true) {
             if (Prefs.showDiagnostics(this)) {
+                // Shown while idle too: the pairing handshake happens before any
+                // session starts, and that trace is the point of the overlay.
+                diagnosticsView.visibility = View.VISIBLE
                 val active = ReceiverSessionHub.state.value !is ReceiverState.Idle
-                diagnosticsView.visibility = if (active) View.VISIBLE else View.GONE
-                if (active) diagnosticsView.text = Diagnostics.sample()
+                val trace = Diagnostics.traceLines()
+                diagnosticsView.text = buildString {
+                    if (active) append(Diagnostics.sample()).append('\n')
+                    if (trace.isEmpty()) {
+                        append(getString(R.string.diagnostics_waiting))
+                    } else {
+                        append(trace.joinToString("\n"))
+                    }
+                }
             } else if (diagnosticsView.visibility != View.GONE) {
                 diagnosticsView.visibility = View.GONE
             }
