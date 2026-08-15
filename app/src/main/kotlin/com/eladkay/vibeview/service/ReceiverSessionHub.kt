@@ -146,7 +146,10 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
         Diagnostics.reset()
         mainHandler.post { stopCastPipeline(notify = false) }
         videoDecoder?.release()
-        videoDecoder = VideoDecoder { width, height -> _videoSize.value = width to height }
+        videoDecoder = VideoDecoder(
+            onVideoSize = { width, height -> _videoSize.value = width to height },
+            trace = ::onProtocolEvent,
+        )
         _state.value = ReceiverState.Mirroring
         presentUi()
     }

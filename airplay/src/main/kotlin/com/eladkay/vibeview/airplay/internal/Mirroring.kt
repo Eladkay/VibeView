@@ -79,9 +79,11 @@ internal class MirrorPacketHandler(
 ) : SimpleChannelInboundHandler<MirrorPacket>() {
 
     private var packetsSeen = 0L
+    private var videoFramesForwarded = 0L
     private var reportedVideo = false
     private var reportedConfig = false
     private var reportedDecryptFailure = false
+    private val unknownTypes = HashSet<Int>()
 
     override fun channelActive(ctx: ChannelHandlerContext) {
         listener.onProtocolEvent("── mirror stream connected")
@@ -108,9 +110,12 @@ internal class MirrorPacketHandler(
                     return
                 }
                 if (VideoPackaging.avccToAnnexBInPlace(packet.payload)) {
+                    videoFramesForwarded++
                     if (!reportedVideo) {
                         reportedVideo = true
                         listener.onProtocolEvent("   first video frame (${packet.payload.size}B) decoded path OK")
+                    } else if (videoFramesForwarded % FRAME_REPORT_INTERVAL == 0L) {
+                        listener.onProtocolEvent("   $videoFramesForwarded video frames forwarded to decoder")
                     }
                     listener.onVideoData(packet.payload)
                 } else {
@@ -138,7 +143,12 @@ internal class MirrorPacketHandler(
                 }
             }
             MirrorPacket.TYPE_HEARTBEAT -> { /* keep-alive, nothing to do */ }
-            else -> log.debug("Ignoring mirror payload type {}", packet.payloadType)
+            else -> {
+                log.debug("Ignoring mirror payload type {}", packet.payloadType)
+                if (unknownTypes.add(packet.payloadType)) {
+                    listener.onProtocolEvent("  !! ignoring unknown mirror payload type ${packet.payloadType}")
+                }
+            }
         }
     }
 
@@ -149,6 +159,7 @@ internal class MirrorPacketHandler(
 
     companion object {
         private val log = LoggerFactory.getLogger(MirrorPacketHandler::class.java)
+        private const val FRAME_REPORT_INTERVAL = 300L
     }
 }
 

@@ -68,6 +68,9 @@ class MainActivity : AppCompatActivity() {
 
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             surfaceReady = false
+            // Worth seeing in the trace: this stops the decoder, and restarting it means
+            // waiting for the sender's next keyframe before the picture returns.
+            ReceiverSessionHub.onProtocolEvent("── surface destroyed, decoder detached")
             ReceiverSessionHub.videoDecoder?.detachSurface()
         }
     }
