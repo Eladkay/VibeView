@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Overrides for the "home" flavor. Anything not listed here falls back to src/main.
+
+  Note: an apostrophe is a special character in Android string resources and must be
+  escaped as \', or AAPT2 fails the resource merge.
+-->
+<resources>
+    <string name="idle_subtitle">Elad\'s AirPlay screen mirroring receiver</string>
+</resources>

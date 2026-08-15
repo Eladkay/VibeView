@@ -29,6 +29,21 @@ android {
         versionName = "0.1.0"
     }
 
+    // Two distributions of the same app. They differ only in the idle-screen subtitle:
+    // "home" carries a personal label, "production" is the neutral build for release.
+    // The default strings in src/main are the production wording; src/home overrides.
+    flavorDimensions += "distribution"
+
+    productFlavors {
+        create("home") {
+            dimension = "distribution"
+            versionNameSuffix = "-home"
+        }
+        create("production") {
+            dimension = "distribution"
+        }
+    }
+
     signingConfigs {
         create("release") {
             if (hasReleaseKeystore) {

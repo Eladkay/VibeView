@@ -18,12 +18,13 @@ Play's current policies. Items already handled in this repo are checked.
         -keyalg RSA -keysize 2048 -validity 10000 -alias vibeview
       cp keystore.properties.template keystore.properties   # then fill in
       ```
-- [ ] Build the release bundle and **smoke-test it on a real device** before
+- [ ] Build the release bundle of the **production** flavor (never `home`, which
+      carries a personal subtitle) and **smoke-test it on a real device** before
       upload — the minified build exercises code paths (Netty, JmDNS, crypto,
-      MediaCodec) that debug does not, and CI only builds the debug APK:
+      MediaCodec) that debug does not, and CI only builds debug APKs:
       ```sh
-      ./gradlew :app:bundleRelease      # app/build/outputs/bundle/release/*.aab
-      ./gradlew :app:assembleRelease    # or an installable APK to sideload
+      ./gradlew :app:bundleProductionRelease   # app/build/outputs/bundle/productionRelease/*.aab
+      ./gradlew :app:assembleProductionRelease # or an installable APK to sideload
       ```
 - [ ] Enroll in Play App Signing (recommended) when creating the app in Play
       Console.

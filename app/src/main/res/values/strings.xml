@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">VibeView</string>
-    <!-- An apostrophe is a special character in Android string resources and must be
-         escaped, or AAPT2 fails the resource merge. -->
-    <string name="idle_subtitle">Elad\'s AirPlay screen mirroring receiver</string>
+    <!-- Default (production) wording; the "home" flavor overrides this in src/home. -->
+    <string name="idle_subtitle">AirPlay screen mirroring receiver</string>
     <string name="idle_instructions">On your iPhone, iPad, or Mac:\nopen Control Center, tap Screen Mirroring, and choose “%1$s”.</string>
     <string name="idle_settings_hint">Press OK for settings</string>
     <string name="status_ready">Ready on %1$s</string>

@@ -67,10 +67,24 @@ adb install app-debug.apk
 `ANDROID_HOME`/`ANDROID_SDK_ROOT` set):
 
 ```sh
-./gradlew :app:assembleDebug
+./gradlew :app:assembleProductionDebug
 adb connect <tv-ip>
-adb install app/build/outputs/apk/debug/app-debug.apk
+adb install app/build/outputs/apk/production/debug/app-production-debug.apk
 ```
+
+### Build variants
+
+The app ships two flavors, differing only in the idle-screen subtitle:
+
+| Flavor | Subtitle | Assemble |
+|--------|----------|----------|
+| `production` | "AirPlay screen mirroring receiver" | `:app:assembleProductionDebug` / `:app:assembleProductionRelease` |
+| `home` | "Elad's AirPlay screen mirroring receiver" | `:app:assembleHomeDebug` / `:app:assembleHomeRelease` |
+
+`home` builds carry a `-home` version-name suffix so the APKs are easy to tell
+apart. `./gradlew :app:assembleDebug` builds both. Flavor-specific resources
+live in `app/src/<flavor>/res`; anything not overridden there comes from
+`app/src/main/res`. Publish the **production** flavor.
 
 The protocol module is pure JVM and can be built and tested with nothing but
 a JDK: `./gradlew :airplay:test`.
