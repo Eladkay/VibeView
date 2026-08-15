@@ -2,6 +2,7 @@ package com.eladkay.vibeview.airplay.internal
 
 import com.dd.plist.NSArray
 import com.dd.plist.NSDictionary
+import com.dd.plist.BinaryPropertyListWriter
 import com.dd.plist.PropertyListParser
 import com.eladkay.vibeview.airplay.AirPlayAudioFormat
 import com.eladkay.vibeview.airplay.AirPlayConfig
@@ -35,6 +36,7 @@ import io.netty.handler.codec.rtsp.RtspMethods
 import io.netty.handler.codec.rtsp.RtspResponseStatuses
 import io.netty.handler.codec.rtsp.RtspVersions
 import org.slf4j.LoggerFactory
+import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 
 /**
@@ -53,7 +55,6 @@ internal class ControlHandler(
 ) : SimpleChannelInboundHandler<FullHttpRequest>() {
 
     private var currentSession: Session? = null
-    private val digestAuth = DigestAuth(DigestAuth.REALM, config.password)
 
     /** Sample rate of the negotiated audio stream; progress timestamps are in these units. */
     private var currentAudioSampleRate = 44100
@@ -63,14 +64,6 @@ internal class ControlHandler(
             ?: (ctx.channel().remoteAddress() as? InetSocketAddress)?.address?.hostAddress
         val session = sessions.session(sessionKey)
         currentSession = session
-
-        if (!digestAuth.isAuthorized(request.method().name(), request.headers().get(HttpHeaderNames.AUTHORIZATION))) {
-            val challenge = createResponse(request)
-            challenge.status = HttpResponseStatus.UNAUTHORIZED
-            challenge.headers().add(HttpHeaderNames.WWW_AUTHENTICATE, digestAuth.challenge())
-            send(ctx, request, challenge)
-            return
-        }
 
         val response = createResponse(request)
         val uri = request.uri().substringBefore('?')
@@ -94,6 +87,13 @@ internal class ControlHandler(
                     response.content().writeBytes(InfoResponse.build(config, publicKeyHex, config.pairingId))
                     response.headers().set(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_BINARY_PLIST)
                 }
+                // A sender asks for the PIN to be displayed, then proves knowledge of it
+                // over SRP. This is what password protection actually looks like on the
+                // wire — senders never use HTTP authentication for it.
+                uri == "/pair-pin-start" -> {
+                    listener.onProtocolEvent("   PIN requested; code is shown on the TV")
+                }
+                uri == "/pair-setup-pin" -> handlePairSetupPin(session, request, response)
                 uri == "/feedback" -> { /* heartbeat, empty 200 */ }
                 uri == "/audioMode" -> { /* default mode is fine */ }
                 method == RtspMethods.OPTIONS ->
@@ -211,6 +211,96 @@ internal class ControlHandler(
             "unparsed(${length}B): ${e.javaClass.simpleName}"
         }
     }
+
+    /**
+     * The three-step SRP exchange, dispatched by which keys the plist carries:
+     * `user` starts it, `pk`+`proof` proves the PIN, `epk`+`authTag` swaps long-term keys.
+     */
+    private fun handlePairSetupPin(
+        session: Session,
+        request: FullHttpRequest,
+        response: DefaultFullHttpResponse,
+    ) {
+        val pin = config.password
+        if (pin.isNullOrEmpty()) {
+            // Nothing to prove: the receiver is open, so a sender should not be here.
+            listener.onProtocolEvent("  !! /pair-setup-pin with no passcode configured")
+            response.setStatus(RtspResponseStatuses.NOT_IMPLEMENTED)
+            return
+        }
+
+        val body = ByteArray(request.content().readableBytes())
+        request.content().getBytes(request.content().readerIndex(), body)
+        val plist = runCatching { PropertyListParser.parse(body) as? NSDictionary }.getOrNull()
+        if (plist == null) {
+            response.setStatus(RtspResponseStatuses.BAD_REQUEST)
+            return
+        }
+
+        when {
+            plist.containsKey("user") -> {
+                val user = plist["user"]?.toJavaObject()?.toString().orEmpty()
+                val pairing = SrpPinPairing(pin).also { session.pinPairing = it }
+                val challenge = pairing.begin(user)
+                respondPlist(response, "pk" to challenge.pk, "salt" to challenge.salt)
+                listener.onProtocolEvent("   PIN pairing started (user $user)")
+            }
+
+            plist.containsKey("pk") && plist.containsKey("proof") -> {
+                val pairing = session.pinPairing
+                if (pairing == null) {
+                    response.setStatus(RtspResponseStatuses.BAD_REQUEST)
+                    return
+                }
+                try {
+                    val proof = pairing.verify(plist.bytes("pk"), plist.bytes("proof"))
+                    respondPlist(response, "proof" to proof)
+                    listener.onProtocolEvent("   PIN accepted")
+                } catch (e: SecurityException) {
+                    session.pinPairing = null
+                    listener.onProtocolEvent("  !! PIN rejected: ${e.message}")
+                    response.setStatus(RtspResponseStatuses.UNAUTHORIZED)
+                }
+            }
+
+            plist.containsKey("epk") && plist.containsKey("authTag") -> {
+                val pairing = session.pinPairing
+                if (pairing == null) {
+                    response.setStatus(RtspResponseStatuses.BAD_REQUEST)
+                    return
+                }
+                val exchange = pairing.exchangeKeys(
+                    plist.bytes("epk"), plist.bytes("authTag"), hexToBytes(publicKeyHex)
+                )
+                respondPlist(response, "epk" to exchange.epk, "authTag" to exchange.authTag)
+                session.pinVerified = true
+                listener.onProtocolEvent(
+                    "   PIN pairing complete" +
+                        if (pairing.clientPublicKey == null) " (sender key not decodable)" else ""
+                )
+            }
+
+            else -> {
+                listener.onProtocolEvent("  !! unexpected /pair-setup-pin body")
+                response.setStatus(RtspResponseStatuses.BAD_REQUEST)
+            }
+        }
+    }
+
+    private fun NSDictionary.bytes(key: String): ByteArray =
+        (this[key]?.toJavaObject() as? ByteArray) ?: ByteArray(0)
+
+    private fun respondPlist(response: DefaultFullHttpResponse, vararg entries: Pair<String, ByteArray>) {
+        val dict = NSDictionary()
+        entries.forEach { (key, value) -> dict.put(key, value) }
+        val out = ByteArrayOutputStream()
+        BinaryPropertyListWriter.write(out, dict)
+        response.content().writeBytes(out.toByteArray())
+        response.headers().set(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_BINARY_PLIST)
+    }
+
+    private fun hexToBytes(hex: String): ByteArray =
+        ByteArray(hex.length / 2) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
 
     /**
      * `SET_PARAMETER` carries now-playing information during an audio session: DAAP-tagged

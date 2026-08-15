@@ -20,6 +20,15 @@ internal class Session(val key: String, deviceKeyPair: KeyPair?) {
     /** Reverse-HTTP channel used to push cast events to the client (from POST /reverse). */
     @Volatile var eventChannel: Channel? = null
 
+    /**
+     * In-progress PIN pairing. It spans several requests and, since a sender may open a
+     * fresh connection between them, has to live on the session rather than the channel.
+     */
+    @Volatile var pinPairing: SrpPinPairing? = null
+
+    /** Set once a sender has proven the PIN. */
+    @Volatile var pinVerified = false
+
     @Volatile var mirroringActive = false
     @Volatile var castingActive = false
 

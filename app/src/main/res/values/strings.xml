@@ -33,6 +33,6 @@
 
     <string name="settings_category_security">Security</string>
     <string name="settings_passcode">Require passcode</string>
-    <string name="settings_passcode_summary">Ask connecting devices for a code shown on this screen</string>
+    <string name="settings_passcode_summary">Require the code shown on this screen before a device can connect</string>
     <string name="settings_passcode_value">Passcode</string>
 </resources>

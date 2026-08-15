@@ -38,8 +38,9 @@ phones and other devices can cast media to it too.
 - **Diagnostics overlay** — an optional HUD (Advanced → Show diagnostics) with
   frame rates, bitrate, decoder latency, queue depth, and codec, for checking
   how a real session is behaving.
-- **Optional passcode** — require a code (shown on the TV) before an Apple device
-  can mirror or cast, enforced with RTSP/HTTP Digest authentication.
+- **Optional passcode** — require a code, shown on the TV, before an Apple device
+  can connect. Enforced with AirPlay's SRP-6a PIN pairing, so the code proves
+  itself over the wire without ever being transmitted.
 - **TV-friendly UI** — an idle screen with connection instructions, and a
   D-pad settings screen (device name, audio toggle, passcode, start-on-boot).
 - Runs as a foreground service, so the TV stays discoverable while you use
@@ -54,13 +55,13 @@ phones and other devices can cast media to it too.
 ## Install
 
 **From CI:** every push runs the
-[Build workflow](.github/workflows/build.yml), which assembles a debug APK
-and uploads it as the `vibeview-debug-apk` artifact. Download it from the
-Actions run and sideload it:
+[Build workflow](.github/workflows/build.yml), which assembles both flavors and
+uploads them as the `vibeview-debug-apks` artifact. Download it from the
+Actions run and sideload the one you want:
 
 ```sh
 adb connect <tv-ip>
-adb install app-debug.apk
+adb install app-production-debug.apk
 ```
 
 **From source:** with an Android SDK installed (Android Studio, or
@@ -86,8 +87,8 @@ apart. `./gradlew :app:assembleDebug` builds both. Flavor-specific resources
 live in `app/src/<flavor>/res`; anything not overridden there comes from
 `app/src/main/res`. Publish the **production** flavor.
 
-The protocol module is pure JVM and can be built and tested with nothing but
-a JDK: `./gradlew :airplay:test`.
+The protocol modules are pure JVM and can be built and tested with nothing but
+a JDK: `./gradlew :airplay:test :dlna:test`.
 
 ## Usage
 
@@ -114,7 +115,7 @@ airplay/   Pure-JVM AirPlay receiver library (no Android dependencies)
   └─ com.eladkay.vibeview.airplay  Kotlin network layer (Netty):
         Bonjour advertising (JmDNS), RTSP control server, mirror-stream TCP
         receiver, RTP audio receiver, casting HTTP server + reverse-HTTP events,
-        Digest auth
+        SRP-6a PIN pairing
 
 dlna/      Pure-JVM DLNA/UPnP MediaRenderer (no Android dependencies)
   └─ com.eladkay.vibeview.dlna     SSDP discovery responder + Netty HTTP server
@@ -169,9 +170,9 @@ and hands Annex-B video / raw audio frames to the app, which feeds them to
 - **ALAC / Opus** playback relies on the device's platform decoders. Most modern
   Android TV devices ship them; where a decoder is missing, that audio path is
   skipped (video keeps playing) rather than crashing.
-- The **passcode** uses AirPlay's password/Digest mechanism (advertised as
-  `pw=true`), not the AirPlay 2 SRP on-screen-code flow. The sender prompts for
-  the code shown on the TV; some senders cache it after the first entry.
+- The **passcode** uses AirPlay's legacy SRP-6a PIN pairing (advertised as
+  `pw=true`), not the newer HomeKit pairing flow. Senders prompt for the code
+  shown on the TV and remember it, so the prompt appears once per device.
 - **Android screen mirroring** isn't supported: Android's native mirroring uses
   Google Cast and Miracast, whose *receiver* stacks aren't available to a
   third-party app (they're gated by Google / the OS). Android devices can still
