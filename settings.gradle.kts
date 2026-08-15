@@ -28,6 +28,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "VibeView"
 include(":airplay")
+include(":dlna")
 
 // The TV app needs an Android SDK; the pure-JVM :airplay module builds without one.
 // This lets `./gradlew :airplay:test` run on machines that only have a JDK.

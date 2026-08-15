@@ -17,6 +17,8 @@ import com.eladkay.vibeview.Prefs
 import com.eladkay.vibeview.R
 import com.eladkay.vibeview.airplay.AirPlayConfig
 import com.eladkay.vibeview.airplay.AirPlayServer
+import com.eladkay.vibeview.dlna.DlnaConfig
+import com.eladkay.vibeview.dlna.DlnaRenderer
 import com.eladkay.vibeview.ui.MainActivity
 import java.net.Inet4Address
 import java.net.InetAddress
@@ -30,6 +32,7 @@ import kotlin.concurrent.thread
 class AirPlayService : Service() {
 
     private var server: AirPlayServer? = null
+    private var dlnaRenderer: DlnaRenderer? = null
     private var multicastLock: WifiManager.MulticastLock? = null
 
     override fun onCreate() {
@@ -45,8 +48,13 @@ class AirPlayService : Service() {
 
     override fun onDestroy() {
         val stopping = server
+        val stoppingDlna = dlnaRenderer
         server = null
-        thread(name = "AirPlayStop") { runCatching { stopping?.stop() } }
+        dlnaRenderer = null
+        thread(name = "AirPlayStop") {
+            runCatching { stopping?.stop() }
+            runCatching { stoppingDlna?.stop() }
+        }
         ReceiverSessionHub.shutdown()
         ReceiverSessionHub.updateServerInfo(
             ServerInfo(Prefs.deviceName(this), null, running = false)
@@ -73,6 +81,20 @@ class AirPlayService : Service() {
                 ReceiverSessionHub.attach(this, newServer)
                 newServer.start(address)
                 server = newServer
+
+                // DLNA renderer needs a bound address; a failure here (e.g. port 1900
+                // busy) must not take down AirPlay.
+                if (address != null) {
+                    runCatching {
+                        val renderer = DlnaRenderer(
+                            DlnaConfig(friendlyName = deviceName, uuid = Prefs.dlnaUuid(this)),
+                            ReceiverSessionHub,
+                        )
+                        renderer.start(address)
+                        dlnaRenderer = renderer
+                    }.onFailure { Log.w(TAG, "DLNA renderer failed to start", it) }
+                }
+
                 ReceiverSessionHub.updateServerInfo(
                     ServerInfo(deviceName, address?.hostAddress, running = true, passcode = passcode)
                 )

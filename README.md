@@ -2,7 +2,8 @@
 
 An Android TV app that turns your TV into an **AirPlay receiver**: full-screen
 mirroring from iPhones, iPads, and Macs — with audio — plus AirPlay video
-casting and photo sharing.
+casting and photo sharing. It also acts as a **DLNA/UPnP renderer**, so Android
+phones and other devices can cast media to it too.
 
 <p align="center"><img src="app/src/main/res/mipmap-xhdpi/banner.png" alt="VibeView banner" width="320"></p>
 
@@ -24,8 +25,13 @@ casting and photo sharing.
   like Netflix will not work — see limitations.)
 - **Photo casting** — share a photo from the iOS Photos app and it appears on
   the TV.
-- **Optional passcode** — require a code (shown on the TV) before a device can
-  mirror or cast, enforced with RTSP/HTTP Digest authentication.
+- **DLNA / UPnP renderer** — VibeView advertises itself as a MediaRenderer, so
+  Android apps with "Play to"/"Cast to TV" (plus VLC, Windows "Cast to device",
+  Plex, and others) can push a video, photo, or music **URL** that plays through
+  the same ExoPlayer path, with transport controls (play/pause/seek/volume).
+  This is media-URL casting, not live Android screen mirroring — see below.
+- **Optional passcode** — require a code (shown on the TV) before an Apple device
+  can mirror or cast, enforced with RTSP/HTTP Digest authentication.
 - **TV-friendly UI** — an idle screen with connection instructions, and a
   D-pad settings screen (device name, audio toggle, passcode, start-on-boot).
 - Runs as a foreground service, so the TV stays discoverable while you use
@@ -76,7 +82,8 @@ and **back** on the remote work as expected.
 
 ## Architecture
 
-Two Gradle modules:
+Three Gradle modules — two pure-JVM protocol libraries (buildable/testable with
+just a JDK) and the Android app:
 
 ```
 airplay/   Pure-JVM AirPlay receiver library (no Android dependencies)
@@ -84,13 +91,23 @@ airplay/   Pure-JVM AirPlay receiver library (no Android dependencies)
   │     pairing (Curve25519/Ed25519), FairPlay handshake, AES stream decryption
   └─ com.eladkay.vibeview.airplay  Kotlin network layer (Netty):
         Bonjour advertising (JmDNS), RTSP control server, mirror-stream TCP
-        receiver, RTP audio receiver, casting HTTP server + reverse-HTTP events
+        receiver, RTP audio receiver, casting HTTP server + reverse-HTTP events,
+        Digest auth
+
+dlna/      Pure-JVM DLNA/UPnP MediaRenderer (no Android dependencies)
+  └─ com.eladkay.vibeview.dlna     SSDP discovery responder + Netty HTTP server
+        serving the UPnP device/service descriptions and SOAP control
+        (AVTransport / RenderingControl / ConnectionManager)
 
 app/       Android TV app
-  ├─ service/   foreground service + session hub bridging network ↔ UI
-  ├─ media/     MediaCodec H.264 renderer, AAC-ELD audio player, ExoPlayer cast
+  ├─ service/   foreground service + session hub bridging both protocols ↔ UI
+  ├─ media/     MediaCodec H.264 renderer, ALAC/Opus/AAC audio, ExoPlayer cast
   └─ ui/        idle/mirror/cast/photo screens, settings
 ```
+
+Both the AirPlay casting path and the DLNA renderer feed the **same** ExoPlayer
+controller, so casting a URL works identically whether it arrives from an Apple
+device or an Android/DLNA control point.
 
 Port layout (all on the TV):
 
@@ -100,6 +117,8 @@ Port layout (all on the TV):
 | 7100 | RTSP     | `_raop._tcp`    | mirroring control: pairing, `fp-setup`, stream `SETUP` |
 | 7102 | TCP      | (in SETUP reply) | encrypted H.264 mirror stream |
 | ephemeral | UDP | (in SETUP reply) | RTP audio data + control |
+| 1900 | UDP      | SSDP multicast  | DLNA discovery (M-SEARCH / NOTIFY) |
+| 8873 | HTTP     | UPnP            | DLNA device/service descriptions + SOAP control |
 
 The mirroring session works like this: the sender discovers the receiver via
 Bonjour, runs pair-setup/pair-verify and the FairPlay handshake over RTSP,
@@ -120,6 +139,15 @@ and hands Annex-B video / raw audio frames to the app, which feeds them to
 - The **passcode** uses AirPlay's password/Digest mechanism (advertised as
   `pw=true`), not the AirPlay 2 SRP on-screen-code flow. The sender prompts for
   the code shown on the TV; some senders cache it after the first entry.
+- **Android screen mirroring** isn't supported: Android's native mirroring uses
+  Google Cast and Miracast, whose *receiver* stacks aren't available to a
+  third-party app (they're gated by Google / the OS). Android devices can still
+  cast **media URLs** to VibeView via DLNA ("Play to"/"Cast to TV"), which is
+  what most "cast a video" apps use. Full Android screen mirroring would require
+  a separate companion sender app.
+- The DLNA renderer answers control-point polling for playback state; it does
+  not push GENA event notifications, so a few control points may not show live
+  progress even though play/pause/seek work.
 - One sender at a time; multi-room audio (AirPlay 2 group playback) is out of
   scope.
 - The AirPlay protocol is unofficial and reverse-engineered; new iOS/macOS
@@ -127,8 +155,9 @@ and hands Annex-B video / raw audio frames to the app, which feeds them to
 
 ## Development
 
-- `./gradlew :airplay:test` — protocol unit tests (framing, plists, digest auth,
-  FairPlay vectors) run on any JDK 17+, no Android SDK needed.
+- `./gradlew :airplay:test :dlna:test` — protocol unit tests (framing, plists,
+  digest auth, FairPlay vectors, SOAP/UPnP) run on any JDK 17+, no Android SDK
+  needed.
 - `./gradlew :app:assembleDebug` — needs an Android SDK. CI
   ([`.github/workflows/build.yml`](.github/workflows/build.yml)) runs this
   on every push and publishes the APK as an artifact.

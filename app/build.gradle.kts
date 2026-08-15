@@ -90,6 +90,7 @@ android {
 
 dependencies {
     implementation(project(":airplay"))
+    implementation(project(":dlna"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)

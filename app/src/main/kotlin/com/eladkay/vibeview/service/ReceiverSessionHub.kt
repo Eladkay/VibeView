@@ -9,6 +9,9 @@ import com.eladkay.vibeview.airplay.AirPlayListener
 import com.eladkay.vibeview.airplay.AirPlayServer
 import com.eladkay.vibeview.airplay.CastState
 import com.eladkay.vibeview.airplay.CastStatus
+import com.eladkay.vibeview.dlna.DlnaRendererListener
+import com.eladkay.vibeview.dlna.DlnaStatus
+import com.eladkay.vibeview.dlna.TransportState
 import com.eladkay.vibeview.media.AudioPlayer
 import com.eladkay.vibeview.media.CastPlayerController
 import com.eladkay.vibeview.media.VideoDecoder
@@ -40,7 +43,7 @@ data class ServerInfo(
  * Process-wide bridge between the AirPlay server (Netty threads), the media pipeline,
  * and the UI. The service populates it; activities observe it.
  */
-object ReceiverSessionHub : AirPlayListener {
+object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
 
     private const val TAG = "ReceiverSessionHub"
 
@@ -180,5 +183,43 @@ object ReceiverSessionHub : AirPlayListener {
             server?.notifyCastState(CastState.STOPPED)
             stopCastPipeline(notify = false)
         }
+    }
+
+    // ---- DLNA renderer (called on Netty threads; reuses the cast pipeline) ----
+
+    @Volatile private var castVolume = 100
+
+    override fun onSetUri(uri: String, metadata: String?) = onCastPlay(uri, 0.0)
+
+    override fun onPlay() = onCastRate(1f)
+
+    override fun onPause() = onCastRate(0f)
+
+    override fun onStop() = onCastStop()
+
+    override fun onSeekSeconds(seconds: Double) = onCastSeek(seconds)
+
+    override fun onSetVolume(volume: Int) {
+        castVolume = volume.coerceIn(0, 100)
+        mainHandler.post { castController?.player?.volume = castVolume / 100f }
+    }
+
+    override fun status(): DlnaStatus {
+        val controller = castController ?: return DlnaStatus(state = TransportState.NO_MEDIA)
+        val s = controller.status
+        val url = (_state.value as? ReceiverState.Casting)?.url
+        val state = when {
+            s.readyToPlay && s.rate > 0f -> TransportState.PLAYING
+            s.readyToPlay -> TransportState.PAUSED
+            url != null -> TransportState.TRANSITIONING
+            else -> TransportState.STOPPED
+        }
+        return DlnaStatus(
+            state = state,
+            durationSeconds = s.duration,
+            positionSeconds = s.position,
+            uri = url,
+            volume = castVolume,
+        )
     }
 }

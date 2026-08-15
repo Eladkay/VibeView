@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.provider.Settings
 import androidx.preference.PreferenceManager
 import java.util.Locale
+import java.util.UUID
 import kotlin.random.Random
 
 object Prefs {
@@ -13,6 +14,7 @@ object Prefs {
     const val KEY_AUTOSTART = "autostart"
     const val KEY_REQUIRE_PASSCODE = "require_passcode"
     const val KEY_PASSCODE = "passcode"
+    const val KEY_DLNA_UUID = "dlna_uuid"
 
     fun get(context: Context): SharedPreferences =
         PreferenceManager.getDefaultSharedPreferences(context)
@@ -42,6 +44,17 @@ object Prefs {
             prefs.edit().putString(KEY_PASSCODE, code).apply()
         }
         return code
+    }
+
+    /** Stable UPnP device UUID advertised by the DLNA renderer; generated once. */
+    fun dlnaUuid(context: Context): String {
+        val prefs = get(context)
+        var uuid = prefs.getString(KEY_DLNA_UUID, null)
+        if (uuid.isNullOrBlank()) {
+            uuid = UUID.randomUUID().toString()
+            prefs.edit().putString(KEY_DLNA_UUID, uuid).apply()
+        }
+        return uuid
     }
 
     /**
