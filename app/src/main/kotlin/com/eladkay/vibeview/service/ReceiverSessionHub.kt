@@ -14,6 +14,7 @@ import com.eladkay.vibeview.dlna.DlnaStatus
 import com.eladkay.vibeview.dlna.TransportState
 import com.eladkay.vibeview.media.AudioPlayer
 import com.eladkay.vibeview.media.CastPlayerController
+import com.eladkay.vibeview.media.Diagnostics
 import com.eladkay.vibeview.media.VideoDecoder
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -89,10 +90,21 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
 
     override fun onMirroringStarted() {
         Log.i(TAG, "Mirroring started")
+        Diagnostics.reset()
         mainHandler.post { stopCastPipeline(notify = false) }
         videoDecoder?.release()
         videoDecoder = VideoDecoder { width, height -> _videoSize.value = width to height }
         _state.value = ReceiverState.Mirroring
+        presentUi()
+    }
+
+    /**
+     * Pulls the receiver UI forward. Only the activity owns a rendering surface, so a
+     * session that starts while the app is backgrounded would otherwise decode into
+     * nothing.
+     */
+    private fun presentUi() {
+        appContext?.let { SessionLauncher.bringToForeground(it) }
     }
 
     override fun onVideoData(data: ByteArray) {
@@ -107,6 +119,8 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
 
     override fun onAudioFormat(format: AirPlayAudioFormat) {
         Log.i(TAG, "Audio format: $format")
+        Diagnostics.audioFormat =
+            "${format.compression} ${format.sampleRate}Hz ${format.channels}ch"
         audioPlayer?.release()
         audioPlayer = if (audioEnabled) AudioPlayer.create(format) else null
     }
@@ -144,6 +158,7 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
             ).also { castController = it }
             controller.play(url, startPosition)
             _state.value = ReceiverState.Casting(url)
+            presentUi()
         }
     }
 
@@ -162,6 +177,7 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
 
     override fun onPhoto(jpeg: ByteArray) {
         _state.value = ReceiverState.Photo(jpeg)
+        presentUi()
     }
 
     override fun castStatus(): CastStatus = castController?.status ?: CastStatus()

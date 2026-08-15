@@ -118,6 +118,15 @@ class AirPlayService : Service() {
                     NotificationManager.IMPORTANCE_LOW
                 )
             )
+            // High importance so the full-screen intent that pulls the receiver UI
+            // forward is allowed to interrupt.
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID_SESSION,
+                    getString(R.string.notification_channel_session),
+                    NotificationManager.IMPORTANCE_HIGH
+                )
+            )
         }
         val contentIntent = PendingIntent.getActivity(
             this, 0,
@@ -168,6 +177,7 @@ class AirPlayService : Service() {
     companion object {
         private const val TAG = "AirPlayService"
         private const val CHANNEL_ID = "receiver"
+        const val CHANNEL_ID_SESSION = "session"
         private const val NOTIFICATION_ID = 1
 
         fun start(context: Context) {

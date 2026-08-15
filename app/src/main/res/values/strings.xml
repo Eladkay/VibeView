@@ -11,7 +11,9 @@
     <string name="passcode_prompt">Passcode: %1$s</string>
 
     <string name="notification_channel">AirPlay receiver</string>
+    <string name="notification_channel_session">Incoming sessions</string>
     <string name="notification_text">Discoverable as “%1$s”</string>
+    <string name="notification_session_started">A device is connecting — open VibeView</string>
 
     <string name="settings_category_receiver">Receiver</string>
     <string name="settings_device_name">Device name</string>
@@ -19,6 +21,10 @@
     <string name="settings_audio_summary">Play the sound sent with screen mirroring</string>
     <string name="settings_autostart">Start on boot</string>
     <string name="settings_autostart_summary">Make this TV AirPlay-discoverable after it restarts</string>
+
+    <string name="settings_category_advanced">Advanced</string>
+    <string name="settings_diagnostics">Show diagnostics</string>
+    <string name="settings_diagnostics_summary">Overlay frame rate, bitrate, and decoder latency during playback</string>
 
     <string name="settings_category_security">Security</string>
     <string name="settings_passcode">Require passcode</string>

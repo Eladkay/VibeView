@@ -2,6 +2,7 @@ package com.eladkay.vibeview.ui
 
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.SurfaceHolder
@@ -20,10 +21,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.ui.PlayerView
+import com.eladkay.vibeview.Prefs
 import com.eladkay.vibeview.R
+import com.eladkay.vibeview.media.Diagnostics
 import com.eladkay.vibeview.service.AirPlayService
 import com.eladkay.vibeview.service.ReceiverSessionHub
 import com.eladkay.vibeview.service.ReceiverState
+import com.eladkay.vibeview.service.SessionLauncher
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -36,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusView: TextView
     private lateinit var instructionsView: TextView
     private lateinit var passcodeView: TextView
+    private lateinit var diagnosticsView: TextView
 
     private var surfaceReady = false
 
@@ -65,8 +71,19 @@ class MainActivity : AppCompatActivity() {
         statusView = findViewById(R.id.status_line)
         instructionsView = findViewById(R.id.instructions)
         passcodeView = findViewById(R.id.passcode_line)
+        diagnosticsView = findViewById(R.id.diagnostics_overlay)
 
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // A session can arrive while the TV is asleep or showing another app, so the
+        // receiver screen must be able to wake the display and come forward itself.
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
             hide(WindowInsetsCompat.Type.systemBars())
@@ -80,10 +97,17 @@ class MainActivity : AppCompatActivity() {
                 launch { ReceiverSessionHub.state.collect(::render) }
                 launch { ReceiverSessionHub.serverInfo.collect { renderServerInfo() } }
                 launch { ReceiverSessionHub.videoSize.collect { it?.let(::fitSurface) } }
+                launch { runDiagnosticsLoop() }
             }
         }
 
         AirPlayService.start(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // The UI is up, so the full-screen-intent fallback has served its purpose.
+        SessionLauncher.clear(this)
     }
 
     override fun onDestroy() {
@@ -130,6 +154,23 @@ class MainActivity : AppCompatActivity() {
             !info.running -> getString(R.string.status_starting)
             info.hostAddress != null -> getString(R.string.status_ready, info.hostAddress)
             else -> getString(R.string.status_no_network)
+        }
+    }
+
+    /**
+     * Refreshes the diagnostics HUD once a second while it's enabled. Runs only while
+     * the activity is STARTED, so it costs nothing in the background.
+     */
+    private suspend fun runDiagnosticsLoop() {
+        while (true) {
+            if (Prefs.showDiagnostics(this)) {
+                val active = ReceiverSessionHub.state.value !is ReceiverState.Idle
+                diagnosticsView.visibility = if (active) View.VISIBLE else View.GONE
+                if (active) diagnosticsView.text = Diagnostics.sample()
+            } else if (diagnosticsView.visibility != View.GONE) {
+                diagnosticsView.visibility = View.GONE
+            }
+            delay(1000)
         }
     }
 

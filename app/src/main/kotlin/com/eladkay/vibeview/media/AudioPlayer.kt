@@ -35,6 +35,7 @@ class AudioPlayer private constructor(
 
     fun enqueue(frame: ByteArray) {
         if (!running.get()) return
+        Diagnostics.onAudioFrameReceived()
         while (!queue.offer(frame)) {
             queue.poll() // drop oldest: fresher audio matters more than completeness
         }
@@ -106,6 +107,7 @@ class AudioPlayer private constructor(
                         out.position(info.offset)
                         out.get(pcm)
                         track.write(pcm, 0, pcm.size)
+                        Diagnostics.onAudioFrameDecoded()
                     }
                     codec.releaseOutputBuffer(outIndex, false)
                 }
@@ -118,6 +120,7 @@ class AudioPlayer private constructor(
         while (running.get()) {
             val frame = queue.poll(100, TimeUnit.MILLISECONDS) ?: continue
             track.write(frame, 0, frame.size)
+            Diagnostics.onAudioFrameDecoded()
         }
     }
 

@@ -33,9 +33,12 @@ class VideoDecoder(
         if (isConfigChunk(data)) {
             lastConfig = data
         }
+        Diagnostics.onVideoFrameReceived(data.size)
         while (!queue.offer(data)) {
             queue.poll() // drop oldest under pressure; decoder re-syncs on next IDR
+            Diagnostics.onVideoFrameDropped()
         }
+        Diagnostics.setQueueDepth(queue.size)
     }
 
     @Synchronized
@@ -81,6 +84,7 @@ class VideoDecoder(
             }
             codec.configure(format, outputSurface, null, 0)
             codec.start()
+            Diagnostics.videoCodec = runCatching { codec.name }.getOrDefault("h264")
 
             var configSent = false
             var sawKeyframe = false
@@ -143,10 +147,20 @@ class VideoDecoder(
                     val format = codec.outputFormat
                     val width = cropped(format, MediaFormat.KEY_WIDTH, "crop-left", "crop-right")
                     val height = cropped(format, MediaFormat.KEY_HEIGHT, "crop-top", "crop-bottom")
-                    if (width > 0 && height > 0) onVideoSize(width, height)
+                    if (width > 0 && height > 0) {
+                        onVideoSize(width, height)
+                        Diagnostics.videoWidth = width
+                        Diagnostics.videoHeight = height
+                    }
                 }
                 else -> if (index >= 0) {
+                    if (info.size > 0) {
+                        // presentationTimeUs was stamped with nanoTime/1000 on input,
+                        // so this is the decoder's own input-to-output latency.
+                        Diagnostics.onVideoFrameDecoded(System.nanoTime() / 1000 - info.presentationTimeUs)
+                    }
                     codec.releaseOutputBuffer(index, info.size > 0)
+                    Diagnostics.setQueueDepth(queue.size)
                 }
             }
         }

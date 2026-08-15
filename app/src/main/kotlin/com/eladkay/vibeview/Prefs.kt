@@ -15,6 +15,7 @@ object Prefs {
     const val KEY_REQUIRE_PASSCODE = "require_passcode"
     const val KEY_PASSCODE = "passcode"
     const val KEY_DLNA_UUID = "dlna_uuid"
+    const val KEY_SHOW_DIAGNOSTICS = "show_diagnostics"
 
     fun get(context: Context): SharedPreferences =
         PreferenceManager.getDefaultSharedPreferences(context)
@@ -31,6 +32,9 @@ object Prefs {
 
     fun requirePasscode(context: Context): Boolean =
         get(context).getBoolean(KEY_REQUIRE_PASSCODE, false)
+
+    fun showDiagnostics(context: Context): Boolean =
+        get(context).getBoolean(KEY_SHOW_DIAGNOSTICS, false)
 
     /**
      * The passcode senders must enter when [requirePasscode] is on. A 4-digit code
