@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">VibeView</string>
-    <string name="idle_subtitle">AirPlay screen mirroring receiver</string>
+    <string name="idle_subtitle">Elad's AirPlay screen mirroring receiver</string>
     <string name="idle_instructions">On your iPhone, iPad, or Mac:\nopen Control Center, tap Screen Mirroring, and choose “%1$s”.</string>
     <string name="idle_settings_hint">Press OK for settings</string>
     <string name="status_ready">Ready on %1$s</string>
