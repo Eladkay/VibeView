@@ -28,6 +28,83 @@
         android:scaleType="fitCenter"
         android:visibility="gone" />
 
+    <LinearLayout
+        android:id="@+id/now_playing_group"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingHorizontal="80dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <ImageView
+            android:id="@+id/now_playing_artwork"
+            android:layout_width="320dp"
+            android:layout_height="320dp"
+            android:background="@drawable/device_name_chip"
+            android:contentDescription="@string/now_playing_artwork_description"
+            android:scaleType="centerCrop" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="48dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/now_playing_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="2"
+                android:textColor="@color/text_primary"
+                android:textSize="40sp"
+                tools:text="Blue Monday" />
+
+            <TextView
+                android:id="@+id/now_playing_artist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/accent"
+                android:textSize="26sp"
+                tools:text="New Order" />
+
+            <TextView
+                android:id="@+id/now_playing_album"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/text_secondary"
+                android:textSize="20sp"
+                tools:text="Power, Corruption &amp; Lies" />
+
+            <ProgressBar
+                android:id="@+id/now_playing_progress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="6dp"
+                android:layout_marginTop="32dp"
+                android:max="1000" />
+
+            <TextView
+                android:id="@+id/now_playing_time"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:textColor="@color/text_tertiary"
+                android:textSize="16sp"
+                tools:text="1:12 / 4:36" />
+        </LinearLayout>
+    </LinearLayout>
+
     <TextView
         android:id="@+id/diagnostics_overlay"
         android:layout_width="wrap_content"

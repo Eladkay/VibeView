@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
@@ -25,6 +26,7 @@ import com.eladkay.vibeview.Prefs
 import com.eladkay.vibeview.R
 import com.eladkay.vibeview.media.Diagnostics
 import com.eladkay.vibeview.service.AirPlayService
+import com.eladkay.vibeview.service.NowPlaying
 import com.eladkay.vibeview.service.ReceiverSessionHub
 import com.eladkay.vibeview.service.ReceiverState
 import com.eladkay.vibeview.service.SessionLauncher
@@ -42,6 +44,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var instructionsView: TextView
     private lateinit var passcodeView: TextView
     private lateinit var diagnosticsView: TextView
+    private lateinit var nowPlayingGroup: View
+    private lateinit var nowPlayingArtwork: ImageView
+    private lateinit var nowPlayingTitle: TextView
+    private lateinit var nowPlayingArtist: TextView
+    private lateinit var nowPlayingAlbum: TextView
+    private lateinit var nowPlayingProgress: ProgressBar
+    private lateinit var nowPlayingTime: TextView
 
     private var surfaceReady = false
 
@@ -72,6 +81,13 @@ class MainActivity : AppCompatActivity() {
         instructionsView = findViewById(R.id.instructions)
         passcodeView = findViewById(R.id.passcode_line)
         diagnosticsView = findViewById(R.id.diagnostics_overlay)
+        nowPlayingGroup = findViewById(R.id.now_playing_group)
+        nowPlayingArtwork = findViewById(R.id.now_playing_artwork)
+        nowPlayingTitle = findViewById(R.id.now_playing_title)
+        nowPlayingArtist = findViewById(R.id.now_playing_artist)
+        nowPlayingAlbum = findViewById(R.id.now_playing_album)
+        nowPlayingProgress = findViewById(R.id.now_playing_progress)
+        nowPlayingTime = findViewById(R.id.now_playing_time)
 
         // A session can arrive while the TV is asleep or showing another app, so the
         // receiver screen must be able to wake the display and come forward itself.
@@ -97,6 +113,7 @@ class MainActivity : AppCompatActivity() {
                 launch { ReceiverSessionHub.state.collect(::render) }
                 launch { ReceiverSessionHub.serverInfo.collect { renderServerInfo() } }
                 launch { ReceiverSessionHub.videoSize.collect { it?.let(::fitSurface) } }
+                launch { ReceiverSessionHub.nowPlaying.collect(::renderNowPlaying) }
                 launch { runDiagnosticsLoop() }
             }
         }
@@ -120,8 +137,10 @@ class MainActivity : AppCompatActivity() {
         surfaceView.visibility = if (state is ReceiverState.Mirroring) View.VISIBLE else View.GONE
         playerView.visibility = if (state is ReceiverState.Casting) View.VISIBLE else View.GONE
         photoView.visibility = if (state is ReceiverState.Photo) View.VISIBLE else View.GONE
+        nowPlayingGroup.visibility = if (state is ReceiverState.AudioOnly) View.VISIBLE else View.GONE
 
         when (state) {
+            is ReceiverState.AudioOnly -> Unit // populated by the nowPlaying collector
             is ReceiverState.Mirroring -> {
                 if (surfaceReady) {
                     ReceiverSessionHub.videoDecoder?.attachSurface(surfaceView.holder.surface)
@@ -155,6 +174,41 @@ class MainActivity : AppCompatActivity() {
             info.hostAddress != null -> getString(R.string.status_ready, info.hostAddress)
             else -> getString(R.string.status_no_network)
         }
+    }
+
+    private fun renderNowPlaying(nowPlaying: NowPlaying) {
+        nowPlayingTitle.text = nowPlaying.title ?: getString(R.string.now_playing_unknown_track)
+        nowPlayingArtist.text = nowPlaying.artist.orEmpty()
+        nowPlayingArtist.visibility = if (nowPlaying.artist.isNullOrBlank()) View.GONE else View.VISIBLE
+        nowPlayingAlbum.text = nowPlaying.album.orEmpty()
+        nowPlayingAlbum.visibility = if (nowPlaying.album.isNullOrBlank()) View.GONE else View.VISIBLE
+
+        val artwork = nowPlaying.artwork
+        if (artwork != null) {
+            val bitmap = BitmapFactory.decodeByteArray(artwork, 0, artwork.size)
+            if (bitmap != null) nowPlayingArtwork.setImageBitmap(bitmap)
+        } else {
+            nowPlayingArtwork.setImageDrawable(null)
+        }
+
+        val duration = nowPlaying.durationSeconds
+        val hasProgress = duration > 0
+        nowPlayingProgress.visibility = if (hasProgress) View.VISIBLE else View.INVISIBLE
+        nowPlayingTime.visibility = if (hasProgress) View.VISIBLE else View.INVISIBLE
+        if (hasProgress) {
+            val fraction = (nowPlaying.positionSeconds / duration).coerceIn(0.0, 1.0)
+            nowPlayingProgress.progress = (fraction * nowPlayingProgress.max).toInt()
+            nowPlayingTime.text = getString(
+                R.string.now_playing_time,
+                formatClock(nowPlaying.positionSeconds),
+                formatClock(duration),
+            )
+        }
+    }
+
+    private fun formatClock(seconds: Double): String {
+        val total = seconds.toLong().coerceAtLeast(0)
+        return "%d:%02d".format(total / 60, total % 60)
     }
 
     /**

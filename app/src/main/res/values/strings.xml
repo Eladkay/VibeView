@@ -9,6 +9,9 @@
     <string name="status_no_network">No network connection found</string>
     <string name="photo_content_description">Photo shared over AirPlay</string>
     <string name="passcode_prompt">Passcode: %1$s</string>
+    <string name="now_playing_artwork_description">Album artwork</string>
+    <string name="now_playing_unknown_track">Playing audio</string>
+    <string name="now_playing_time">%1$s / %2$s</string>
 
     <string name="notification_channel">AirPlay receiver</string>
     <string name="notification_channel_session">Incoming sessions</string>

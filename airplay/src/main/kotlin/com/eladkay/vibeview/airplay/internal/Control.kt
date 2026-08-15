@@ -51,6 +51,9 @@ internal class ControlHandler(
     private var currentSession: Session? = null
     private val digestAuth = DigestAuth(DigestAuth.REALM, config.password)
 
+    /** Sample rate of the negotiated audio stream; progress timestamps are in these units. */
+    private var currentAudioSampleRate = 44100
+
     override fun channelRead0(ctx: ChannelHandlerContext, request: FullHttpRequest) {
         val sessionKey = request.headers().get(HEADER_ACTIVE_REMOTE)
             ?: (ctx.channel().remoteAddress() as? InetSocketAddress)?.address?.hostAddress
@@ -93,7 +96,7 @@ internal class ControlHandler(
                     response.headers().add("Audio-Latency", "11025")
                     response.headers().add("Audio-Jack-Status", "connected; type=analog")
                 }
-                method == RtspMethods.SET_PARAMETER -> { /* volume/progress changes: accept */ }
+                method == RtspMethods.SET_PARAMETER -> handleSetParameter(request)
                 method.name() == "FLUSH" -> { /* accept */ }
                 method == RtspMethods.TEARDOWN -> handleTeardown(session, request)
                 else -> {
@@ -132,7 +135,9 @@ internal class ControlHandler(
             MediaStreamInfo.StreamType.AUDIO -> {
                 streamInfo as AudioStreamInfo
                 session.stopAudio()
-                listener.onAudioFormat(AirPlayAudioFormat.from(streamInfo))
+                val audioFormat = AirPlayAudioFormat.from(streamInfo)
+                currentAudioSampleRate = audioFormat.sampleRate
+                listener.onAudioFormat(audioFormat)
                 val data = AudioReceivers.startData(dataGroup, session, listener)
                 val control = AudioReceivers.startControl(dataGroup)
                 session.audioChannel = data
@@ -144,15 +149,42 @@ internal class ControlHandler(
         }
     }
 
+    /**
+     * `SET_PARAMETER` carries now-playing information during an audio session: DAAP-tagged
+     * track metadata, cover artwork, and a progress line. The content type says which.
+     */
+    private fun handleSetParameter(request: FullHttpRequest) {
+        val contentType = request.headers().get(HttpHeaderNames.CONTENT_TYPE)?.lowercase().orEmpty()
+        val length = request.content().readableBytes()
+        if (length == 0) return
+        val body = ByteArray(length)
+        request.content().getBytes(request.content().readerIndex(), body)
+
+        when {
+            contentType.contains("dmap") || contentType.contains("daap") ->
+                DaapMetadata.parse(body)?.let { listener.onNowPlayingMetadata(it) }
+
+            contentType.startsWith("image/") ->
+                listener.onNowPlayingArtwork(body)
+
+            contentType.contains("parameters") || contentType.isEmpty() -> {
+                val text = String(body, Charsets.UTF_8)
+                DaapMetadata.parseProgress(text, currentAudioSampleRate)?.let { (position, duration) ->
+                    listener.onNowPlayingProgress(position, duration)
+                }
+            }
+        }
+    }
+
     private fun handleTeardown(session: Session, request: FullHttpRequest) {
         val streamInfo = runCatching {
             session.airPlay.rtspGetMediaStreamInfo(ByteBufInputStream(request.content()))
         }.getOrNull()
         when (streamInfo?.streamType) {
-            MediaStreamInfo.StreamType.AUDIO -> session.stopAudio()
+            MediaStreamInfo.StreamType.AUDIO -> stopAudioAndNotify(session)
             MediaStreamInfo.StreamType.VIDEO -> stopMirroringAndNotify(session)
             null -> {
-                session.stopAudio()
+                stopAudioAndNotify(session)
                 stopMirroringAndNotify(session)
             }
         }
@@ -164,10 +196,16 @@ internal class ControlHandler(
         if (wasActive) listener.onMirroringStopped()
     }
 
+    private fun stopAudioAndNotify(session: Session) {
+        val wasActive = session.audioChannel != null
+        session.stopAudio()
+        if (wasActive) listener.onAudioStopped()
+    }
+
     override fun channelInactive(ctx: ChannelHandlerContext) {
         // The control connection dropping means the client is gone: tear its streams down.
         currentSession?.let { session ->
-            session.stopAudio()
+            stopAudioAndNotify(session)
             stopMirroringAndNotify(session)
         }
         super.channelInactive(ctx)

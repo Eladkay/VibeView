@@ -9,6 +9,7 @@ import com.eladkay.vibeview.airplay.AirPlayListener
 import com.eladkay.vibeview.airplay.AirPlayServer
 import com.eladkay.vibeview.airplay.CastState
 import com.eladkay.vibeview.airplay.CastStatus
+import com.eladkay.vibeview.airplay.NowPlayingMetadata
 import com.eladkay.vibeview.dlna.DlnaRendererListener
 import com.eladkay.vibeview.dlna.DlnaStatus
 import com.eladkay.vibeview.dlna.TransportState
@@ -24,10 +25,37 @@ import kotlinx.coroutines.flow.asStateFlow
 sealed interface ReceiverState {
     data object Idle : ReceiverState
     data object Mirroring : ReceiverState
+    data object AudioOnly : ReceiverState
     data class Casting(val url: String) : ReceiverState
     data class Photo(val jpeg: ByteArray) : ReceiverState {
         override fun equals(other: Any?) = other is Photo && jpeg.contentEquals(other.jpeg)
         override fun hashCode() = jpeg.contentHashCode()
+    }
+}
+
+/** Track information for the audio-only now-playing screen. */
+data class NowPlaying(
+    val title: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+    val artwork: ByteArray? = null,
+    val positionSeconds: Double = 0.0,
+    val durationSeconds: Double = 0.0,
+) {
+    override fun equals(other: Any?): Boolean =
+        other is NowPlaying &&
+            title == other.title && artist == other.artist && album == other.album &&
+            positionSeconds == other.positionSeconds && durationSeconds == other.durationSeconds &&
+            (artwork?.contentEquals(other.artwork) ?: (other.artwork == null))
+
+    override fun hashCode(): Int {
+        var result = title?.hashCode() ?: 0
+        result = 31 * result + (artist?.hashCode() ?: 0)
+        result = 31 * result + (album?.hashCode() ?: 0)
+        result = 31 * result + (artwork?.contentHashCode() ?: 0)
+        result = 31 * result + positionSeconds.hashCode()
+        result = 31 * result + durationSeconds.hashCode()
+        return result
     }
 }
 
@@ -60,6 +88,9 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
     private val _videoSize = MutableStateFlow<Pair<Int, Int>?>(null)
     val videoSize: StateFlow<Pair<Int, Int>?> = _videoSize.asStateFlow()
 
+    private val _nowPlaying = MutableStateFlow(NowPlaying())
+    val nowPlaying: StateFlow<NowPlaying> = _nowPlaying.asStateFlow()
+
     @Volatile var videoDecoder: VideoDecoder? = null
         private set
     @Volatile private var audioPlayer: AudioPlayer? = null
@@ -83,6 +114,7 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
         stopMirrorPipeline()
         mainHandler.post { stopCastPipeline(notify = false) }
         server = null
+        _nowPlaying.value = NowPlaying()
         _state.value = ReceiverState.Idle
     }
 
@@ -123,10 +155,48 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
             "${format.compression} ${format.sampleRate}Hz ${format.channels}ch"
         audioPlayer?.release()
         audioPlayer = if (audioEnabled) AudioPlayer.create(format) else null
+
+        // Audio can arrive as part of mirroring or on its own (the TV acting as an
+        // AirPlay speaker). If no video session is running, show now-playing; a later
+        // video SETUP flips the state to Mirroring and takes over.
+        if (_state.value is ReceiverState.Idle) {
+            _nowPlaying.value = NowPlaying()
+            _state.value = ReceiverState.AudioOnly
+            presentUi()
+        }
+    }
+
+    override fun onNowPlayingMetadata(metadata: NowPlayingMetadata) {
+        _nowPlaying.value = _nowPlaying.value.copy(
+            title = metadata.title,
+            artist = metadata.artist,
+            album = metadata.album,
+        )
+    }
+
+    override fun onNowPlayingArtwork(image: ByteArray) {
+        _nowPlaying.value = _nowPlaying.value.copy(artwork = image)
+    }
+
+    override fun onNowPlayingProgress(positionSeconds: Double, durationSeconds: Double) {
+        _nowPlaying.value = _nowPlaying.value.copy(
+            positionSeconds = positionSeconds,
+            durationSeconds = durationSeconds,
+        )
     }
 
     override fun onAudioData(frame: ByteArray) {
         audioPlayer?.enqueue(frame)
+    }
+
+    override fun onAudioStopped() {
+        Log.i(TAG, "Audio stopped")
+        audioPlayer?.release()
+        audioPlayer = null
+        if (_state.value is ReceiverState.AudioOnly) {
+            _nowPlaying.value = NowPlaying()
+            _state.value = ReceiverState.Idle
+        }
     }
 
     override fun onMirroringStopped() {

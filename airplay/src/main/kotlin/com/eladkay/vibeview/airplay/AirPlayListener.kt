@@ -26,8 +26,20 @@ interface AirPlayListener {
     /** One decrypted compressed audio frame (AAC-ELD/AAC-LC/ALAC depending on format). */
     fun onAudioData(frame: ByteArray) {}
 
+    /** Track metadata for the now-playing screen (audio-only AirPlay sessions). */
+    fun onNowPlayingMetadata(metadata: NowPlayingMetadata) {}
+
+    /** Cover artwork (JPEG/PNG bytes) for the current track. */
+    fun onNowPlayingArtwork(image: ByteArray) {}
+
+    /** Playback progress of the current track, in seconds. */
+    fun onNowPlayingProgress(positionSeconds: Double, durationSeconds: Double) {}
+
     /** The mirroring session ended (TEARDOWN or connection loss). */
     fun onMirroringStopped() {}
+
+    /** The audio stream ended (TEARDOWN or connection loss). */
+    fun onAudioStopped() {}
 
     /**
      * Client asked us to play a media URL (video casting).
@@ -50,6 +62,13 @@ interface AirPlayListener {
     /** Pull-model status used to answer `GET /scrub` and `GET /playback-info`. */
     fun castStatus(): CastStatus = CastStatus()
 }
+
+/** Track information shown while playing an audio-only AirPlay stream. */
+data class NowPlayingMetadata(
+    val title: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+)
 
 /** Negotiated mirroring/streaming audio format. */
 data class AirPlayAudioFormat(
