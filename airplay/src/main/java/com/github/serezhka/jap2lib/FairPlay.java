@@ -4,6 +4,7 @@ import net.i2p.crypto.eddsa.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -17,7 +18,11 @@ class FairPlay {
     private final byte[] keyMsg = new byte[164];
 
     void fairPlaySetup(InputStream request, OutputStream response) throws IOException {
-        byte[] data = request.readAllBytes();
+        byte[] data = readAll(request);
+        if (data.length < 5) {
+            log.error("Short fp-setup request ({} bytes)", data.length);
+            return;
+        }
         if (data[4] != 3) {
             log.error("FairPlay version {} is not supported!", data[4]);
             return;
@@ -39,6 +44,21 @@ class FairPlay {
 
             response.write(data, 144, 20);
         }
+    }
+
+    /**
+     * VibeView change: replaces {@code InputStream.readAllBytes()}, which is Java 9+ and
+     * only exists on Android from API 33 — on older devices the FairPlay handshake died
+     * with NoSuchMethodError.
+     */
+    private static byte[] readAll(InputStream in) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] chunk = new byte[4096];
+        int read;
+        while ((read = in.read(chunk)) != -1) {
+            buffer.write(chunk, 0, read);
+        }
+        return buffer.toByteArray();
     }
 
     byte[] decryptAesKey(byte[] key) {

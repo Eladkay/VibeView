@@ -3,19 +3,23 @@ plugins {
     `java-library`
 }
 
+// Android is the only consumer, and it runs from API 26. Pinning javac to the
+// Java 8 API surface makes a call to a newer JDK method (InputStream.readAllBytes,
+// List.of, ...) a compile error here rather than a NoSuchMethodError on a TV:
+// these are plain JVM modules, so Android Lint never inspects them.
 java {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
 }
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
     }
 }
 
 tasks.withType<JavaCompile>().configureEach {
-    options.release.set(11)
+    options.release.set(8)
 }
 
 dependencies {
