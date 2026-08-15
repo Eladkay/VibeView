@@ -32,6 +32,16 @@ casting and photo sharing.
 
 ## Install
 
+**From CI:** every push runs the
+[Build workflow](.github/workflows/build.yaml), which assembles a debug APK
+and uploads it as the `vibeview-debug-apk` artifact. Download it from the
+Actions run and sideload it:
+
+```sh
+adb connect <tv-ip>
+adb install app-debug.apk
+```
+
 **From source:** with an Android SDK installed (Android Studio, or
 `ANDROID_HOME`/`ANDROID_SDK_ROOT` set):
 
@@ -43,16 +53,6 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 The protocol module is pure JVM and can be built and tested with nothing but
 a JDK: `./gradlew :airplay:test`.
-
-**CI:** a ready-to-use GitHub Actions workflow lives at
-[`ci/build.yml`](ci/build.yml) — it runs the protocol tests, assembles the
-debug APK, and uploads it as an artifact. Copy it into `.github/workflows/`
-to enable it (it isn't committed there directly because pushing workflow
-files requires a token with the `workflow` scope):
-
-```sh
-mkdir -p .github/workflows && cp ci/build.yml .github/workflows/
-```
 
 ## Usage
 
@@ -120,8 +120,9 @@ and hands Annex-B video / raw audio frames to the app, which feeds them to
 
 - `./gradlew :airplay:test` — protocol unit tests (framing, plists, FairPlay
   vectors) run on any JDK 17+, no Android SDK needed.
-- `./gradlew :app:assembleDebug` — needs an Android SDK (CI does this on
-  every push).
+- `./gradlew :app:assembleDebug` — needs an Android SDK. CI
+  ([`.github/workflows/build.yaml`](.github/workflows/build.yaml)) runs this
+  on every push and publishes the APK as an artifact.
 
 ## Legal
 
