@@ -3,17 +3,11 @@ package com.eladkay.vibeview.airplay.internal
 import com.eladkay.vibeview.airplay.AirPlayConfig
 import com.eladkay.vibeview.airplay.AirPlayListener
 import com.eladkay.vibeview.airplay.CastState
-import io.netty.bootstrap.ServerBootstrap
 import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
 import io.netty.channel.ChannelFutureListener
 import io.netty.channel.ChannelHandlerContext
-import io.netty.channel.ChannelInitializer
-import io.netty.channel.ChannelOption
-import io.netty.channel.EventLoopGroup
 import io.netty.channel.SimpleChannelInboundHandler
-import io.netty.channel.socket.SocketChannel
-import io.netty.channel.socket.nio.NioServerSocketChannel
 import io.netty.handler.codec.http.DefaultFullHttpRequest
 import io.netty.handler.codec.http.DefaultFullHttpResponse
 import io.netty.handler.codec.http.FullHttpRequest
@@ -23,7 +17,6 @@ import io.netty.handler.codec.http.HttpHeaderNames
 import io.netty.handler.codec.http.HttpMethod
 import io.netty.handler.codec.http.HttpObjectAggregator
 import io.netty.handler.codec.http.HttpResponseStatus
-import io.netty.handler.codec.http.HttpServerCodec
 import io.netty.handler.codec.http.HttpUtil
 import io.netty.handler.codec.http.HttpVersion
 import io.netty.handler.codec.http.QueryStringDecoder
@@ -33,13 +26,15 @@ import org.slf4j.LoggerFactory
 import java.net.InetSocketAddress
 
 /**
- * HTTP handler for the `_airplay._tcp` port: video casting, photos, and the
- * reverse-HTTP event channel. One instance per connection.
+ * Handles the casting endpoints (video, photos, the reverse-HTTP event channel) for
+ * requests the mirroring control handler ahead of it in the pipeline declined.
+ * One instance per connection.
  */
 internal class CastHandler(
     private val config: AirPlayConfig,
     private val sessions: SessionManager,
     private val listener: AirPlayListener,
+    private val publicKeyHex: String,
 ) : SimpleChannelInboundHandler<FullHttpRequest>() {
 
     private val digestAuth = DigestAuth(DigestAuth.REALM, config.password)
@@ -66,7 +61,7 @@ internal class CastHandler(
         if ((path == "/play" || path == "/photo") &&
             !digestAuth.isAuthorized(method.name(), request.headers().get(HttpHeaderNames.AUTHORIZATION))
         ) {
-            val challenge = okResponse()
+            val challenge = okResponse(request)
             challenge.status = HttpResponseStatus.UNAUTHORIZED
             challenge.headers().set(HttpHeaderNames.WWW_AUTHENTICATE, digestAuth.challenge())
             HttpUtil.setContentLength(challenge, 0)
@@ -75,7 +70,7 @@ internal class CastHandler(
             return
         }
 
-        val response = okResponse()
+        val response = okResponse(request)
         try {
             when {
                 path == "/server-info" -> respondPlist(response, Plists.serverInfo(config))
@@ -133,7 +128,10 @@ internal class CastHandler(
                 path == "/fp-setup" || path == "/fp-setup2" -> session.airPlay.fairPlaySetup(
                     ByteBufInputStream(request.content()), ByteBufOutputStream(response.content())
                 )
-                path.startsWith("/info") -> session.airPlay.info(ByteBufOutputStream(response.content()))
+                path.startsWith("/info") -> {
+                    response.content().writeBytes(InfoResponse.build(config, publicKeyHex, config.pairingId))
+                    response.headers().set(HttpHeaderNames.CONTENT_TYPE, ControlHandler.CONTENT_TYPE_BINARY_PLIST)
+                }
                 else -> {
                     log.info("Unhandled cast request {} {}", method, request.uri())
                     response.setStatus(HttpResponseStatus.NOT_FOUND)
@@ -166,7 +164,8 @@ internal class CastHandler(
             }
             val pipeline = ctx.pipeline()
             pipeline.remove(NAME_AGGREGATOR)
-            pipeline.remove(NAME_CODEC)
+            pipeline.remove(NAME_DECODER)
+            pipeline.remove(NAME_ENCODER)
             pipeline.addLast(HttpClientCodec(), HttpObjectAggregator(64 * 1024), EventResponseHandler(session, listener))
             pipeline.remove(this)
             session.eventChannel = ctx.channel()
@@ -174,9 +173,12 @@ internal class CastHandler(
         }
     }
 
-    private fun okResponse(): DefaultFullHttpResponse {
-        val response = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
+    /** Replies in the sender's protocol; this port carries both RTSP and HTTP. */
+    private fun okResponse(request: FullHttpRequest? = null): DefaultFullHttpResponse {
+        val version = request?.protocolVersion() ?: HttpVersion.HTTP_1_1
+        val response = DefaultFullHttpResponse(version, HttpResponseStatus.OK)
         response.headers().set("Server", ControlHandler.SERVER_VERSION)
+        request?.headers()?.get("CSeq")?.let { response.headers().set("CSeq", it) }
         return response
     }
 
@@ -194,8 +196,9 @@ internal class CastHandler(
         private val log = LoggerFactory.getLogger(CastHandler::class.java)
         private const val HEADER_SESSION_ID = "X-Apple-Session-ID"
         private const val HEADER_ACTIVE_REMOTE = "Active-Remote"
-        const val NAME_CODEC = "http-codec"
-        const val NAME_AGGREGATOR = "http-aggregator"
+        const val NAME_DECODER = "codec-decoder"
+        const val NAME_ENCODER = "codec-encoder"
+        const val NAME_AGGREGATOR = "aggregator"
     }
 }
 
@@ -246,35 +249,3 @@ internal object EventChannel {
     private const val HEADER_SESSION_ID = "X-Apple-Session-ID"
 }
 
-/** Plain-HTTP server bound on the `_airplay._tcp` port. */
-internal object CastServer {
-
-    private val log = LoggerFactory.getLogger(CastServer::class.java)
-
-    fun start(
-        bossGroup: EventLoopGroup,
-        workerGroup: EventLoopGroup,
-        config: AirPlayConfig,
-        sessions: SessionManager,
-        listener: AirPlayListener,
-    ): Channel {
-        val bootstrap = ServerBootstrap()
-            .group(bossGroup, workerGroup)
-            .channel(NioServerSocketChannel::class.java)
-            .localAddress(InetSocketAddress(config.airplayPort))
-            .childHandler(object : ChannelInitializer<SocketChannel>() {
-                override fun initChannel(ch: SocketChannel) {
-                    ch.pipeline().addLast(CastHandler.NAME_CODEC, HttpServerCodec())
-                    // Photos arrive as a single PUT body; 32 MB headroom.
-                    ch.pipeline().addLast(CastHandler.NAME_AGGREGATOR, HttpObjectAggregator(32 * 1024 * 1024))
-                    ch.pipeline().addLast(CastHandler(config, sessions, listener))
-                }
-            })
-            .childOption(ChannelOption.TCP_NODELAY, true)
-            .childOption(ChannelOption.SO_KEEPALIVE, true)
-            .option(ChannelOption.SO_REUSEADDR, true)
-        val channel = bootstrap.bind().sync().channel()
-        log.info("Cast server (HTTP) listening on port {}", config.airplayPort)
-        return channel
-    }
-}

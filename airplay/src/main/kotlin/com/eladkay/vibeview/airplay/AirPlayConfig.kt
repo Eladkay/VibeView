@@ -26,4 +26,11 @@ data class AirPlayConfig(
      * `pw=true` so senders prompt for it. Null disables authentication.
      */
     val password: String? = null,
+    /**
+     * Stable pairing identity advertised as `pi` in both the Bonjour TXT record and
+     * `/info`. Senders compare the two, so it must not change between them.
+     */
+    val pairingId: String = "2e388006-13ba-4041-9a67-25dd4a43d536",
+    /** Stable UUID for the advertised display in `/info`. */
+    val displayUuid: String = "e5f7a68d-7b0f-4305-984b-974f677a150b",
 )

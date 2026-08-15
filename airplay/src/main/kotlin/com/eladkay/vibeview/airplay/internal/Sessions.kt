@@ -2,15 +2,16 @@ package com.eladkay.vibeview.airplay.internal
 
 import com.github.serezhka.jap2lib.AirPlay
 import io.netty.channel.Channel
+import java.security.KeyPair
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Per-client protocol state. One session spans the RTSP control connection and any
  * mirror/audio/cast activity belonging to the same client.
  */
-internal class Session(val key: String) {
+internal class Session(val key: String, deviceKeyPair: KeyPair?) {
 
-    val airPlay = AirPlay()
+    val airPlay = if (deviceKeyPair != null) AirPlay(deviceKeyPair) else AirPlay()
 
     @Volatile var mirrorChannel: Channel? = null
     @Volatile var audioChannel: Channel? = null
@@ -48,7 +49,7 @@ internal class Session(val key: String) {
  * Sessions are keyed by the client's `Active-Remote` header (RTSP) or
  * `X-Apple-Session-ID` header (casting HTTP), falling back to the remote address.
  */
-internal class SessionManager {
+internal class SessionManager(private val deviceKeyPair: KeyPair? = null) {
 
     private val sessions = ConcurrentHashMap<String, Session>()
 
@@ -56,7 +57,7 @@ internal class SessionManager {
     @Volatile var activeCast: Session? = null
 
     fun session(key: String?): Session =
-        sessions.computeIfAbsent(key ?: "default") { Session(it) }
+        sessions.computeIfAbsent(key ?: "default") { Session(it, deviceKeyPair) }
 
     fun all(): Collection<Session> = sessions.values
 

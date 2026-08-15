@@ -24,6 +24,21 @@ public class AirPlay {
     }
 
     /**
+     * VibeView addition: share one device-wide key pair across sessions so the
+     * advertised {@code pk} matches the key returned by pair-setup.
+     */
+    public AirPlay(java.security.KeyPair keyPair) {
+        pairing = new Pairing(keyPair);
+        fairplay = new FairPlay();
+        rtsp = new RTSP();
+    }
+
+    /** VibeView addition: raw Ed25519 public key bytes for advertising. */
+    public byte[] publicKeyBytes() {
+        return pairing.publicKeyBytes();
+    }
+
+    /**
      * {@code /info}
      * <p>
      * Writes server info to output stream

@@ -1,12 +1,13 @@
 package com.eladkay.vibeview.airplay
 
 import com.eladkay.vibeview.airplay.internal.AirPlayAdvertiser
-import com.eladkay.vibeview.airplay.internal.CastServer
 import com.eladkay.vibeview.airplay.internal.ControlServer
 import com.eladkay.vibeview.airplay.internal.EventChannel
 import com.eladkay.vibeview.airplay.internal.SessionManager
 import io.netty.channel.Channel
 import io.netty.channel.nio.NioEventLoopGroup
+import net.i2p.crypto.eddsa.EdDSAPublicKey
+import net.i2p.crypto.eddsa.KeyPairGenerator
 import org.slf4j.LoggerFactory
 import java.net.InetAddress
 
@@ -26,8 +27,16 @@ class AirPlayServer(
     private val bossGroup = NioEventLoopGroup(1)
     private val workerGroup = NioEventLoopGroup(2)
     private val dataGroup = NioEventLoopGroup(2)
-    private val sessions = SessionManager()
-    private val advertiser = AirPlayAdvertiser(config)
+    /**
+     * One Ed25519 identity for the whole device, shared by every session, so the `pk`
+     * advertised over Bonjour and reported in `/info` is the key pair-setup returns.
+     */
+    private val deviceKeyPair = KeyPairGenerator().generateKeyPair()
+    private val publicKeyHex =
+        (deviceKeyPair.public as EdDSAPublicKey).abyte.joinToString("") { "%02x".format(it) }
+
+    private val sessions = SessionManager(deviceKeyPair)
+    private val advertiser = AirPlayAdvertiser(config, publicKeyHex)
 
     private var controlChannel: Channel? = null
     private var castChannel: Channel? = null
@@ -46,8 +55,14 @@ class AirPlayServer(
         check(!started) { "AirPlayServer already started" }
         started = true
         try {
-            controlChannel = ControlServer.start(bossGroup, workerGroup, dataGroup, config, sessions, listener)
-            castChannel = CastServer.start(bossGroup, workerGroup, config, sessions, listener)
+            // Both advertised services speak the full protocol, since a sender may run
+            // the session over either one.
+            controlChannel = ControlServer.start(
+                bossGroup, workerGroup, dataGroup, config, config.airtunesPort, sessions, listener, publicKeyHex
+            )
+            castChannel = ControlServer.start(
+                bossGroup, workerGroup, dataGroup, config, config.airplayPort, sessions, listener, publicKeyHex
+            )
             advertiser.start(advertiseAddress)
         } catch (e: Exception) {
             stop()

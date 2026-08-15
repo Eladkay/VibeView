@@ -12,7 +12,10 @@ import javax.jmdns.ServiceInfo
  * Registers the `_airplay._tcp` and `_raop._tcp` Bonjour services on the active
  * LAN interface so Apple devices can discover the receiver.
  */
-internal class AirPlayAdvertiser(private val config: AirPlayConfig) {
+internal class AirPlayAdvertiser(
+    private val config: AirPlayConfig,
+    private val publicKeyHex: String,
+) {
 
     private var jmdns: JmDNS? = null
 
@@ -62,14 +65,14 @@ internal class AirPlayAdvertiser(private val config: AirPlayConfig) {
     private fun airplayProps(): Map<String, String> = mapOf(
         "deviceid" to config.deviceId,
         "features" to FEATURES,
-        "srcvers" to SOURCE_VERSION,
+        "srcvers" to InfoResponse.SOURCE_VERSION,
         "flags" to "0x4",
         "vv" to "2",
-        "model" to MODEL,
+        "model" to InfoResponse.MODEL,
         "pw" to passwordProtected,
         "rhd" to "5.6.0.0",
-        "pk" to PUBLIC_KEY,
-        "pi" to PAIRING_ID,
+        "pk" to publicKeyHex,
+        "pi" to config.pairingId,
     )
 
     private fun raopProps(): Map<String, String> = mapOf(
@@ -79,7 +82,7 @@ internal class AirPlayAdvertiser(private val config: AirPlayConfig) {
         "et" to "0,3,5",
         "vv" to "2",
         "ft" to FEATURES,
-        "am" to MODEL,
+        "am" to InfoResponse.MODEL,
         "md" to "0,1,2",
         "rhd" to "5.6.0.0",
         "pw" to passwordProtected,
@@ -89,20 +92,13 @@ internal class AirPlayAdvertiser(private val config: AirPlayConfig) {
         "tp" to "UDP",
         "txtvers" to "1",
         "sf" to "0x4",
-        "vs" to SOURCE_VERSION,
+        "vs" to InfoResponse.SOURCE_VERSION,
         "vn" to "65537",
-        "pk" to PUBLIC_KEY,
+        "pk" to publicKeyHex,
     )
 
     companion object {
         private val log = LoggerFactory.getLogger(AirPlayAdvertiser::class.java)
         private const val FEATURES = "0x5A7FFFF7,0x1E"
-        private const val SOURCE_VERSION = "220.68"
-        private const val MODEL = "AppleTV3,2"
-
-        // Advertised curve25519 public key / pairing id; must match what the pairing
-        // implementation in jap2lib uses (it accepts any client with these constants).
-        private const val PUBLIC_KEY = "b07727d6f6cd6e08b58ede525ec3cdeaa252ad9f683feb212ef8a205246554e7"
-        private const val PAIRING_ID = "2e388006-13ba-4041-9a67-25dd4a43d536"
     }
 }

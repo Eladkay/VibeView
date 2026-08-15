@@ -46,6 +46,7 @@ internal class ControlHandler(
     private val sessions: SessionManager,
     private val dataGroup: EventLoopGroup,
     private val listener: AirPlayListener,
+    private val publicKeyHex: String,
 ) : SimpleChannelInboundHandler<FullHttpRequest>() {
 
     private var currentSession: Session? = null
@@ -71,6 +72,7 @@ internal class ControlHandler(
         val response = createResponse(request)
         val uri = request.uri().substringBefore('?')
         val method = request.method()
+        log.info("Control {} {} ({})", method, request.uri(), request.protocolVersion().text())
 
         try {
             when {
@@ -81,7 +83,10 @@ internal class ControlHandler(
                 uri == "/fp-setup" -> session.airPlay.fairPlaySetup(
                     ByteBufInputStream(request.content()), ByteBufOutputStream(response.content())
                 )
-                uri.startsWith("/info") -> session.airPlay.info(ByteBufOutputStream(response.content()))
+                uri.startsWith("/info") -> {
+                    response.content().writeBytes(InfoResponse.build(config, publicKeyHex, config.pairingId))
+                    response.headers().set(HttpHeaderNames.CONTENT_TYPE, CONTENT_TYPE_BINARY_PLIST)
+                }
                 uri == "/feedback" -> { /* heartbeat, empty 200 */ }
                 uri == "/audioMode" -> { /* default mode is fine */ }
                 method == RtspMethods.OPTIONS ->
@@ -100,7 +105,11 @@ internal class ControlHandler(
                 method.name() == "FLUSH" -> { /* accept */ }
                 method == RtspMethods.TEARDOWN -> handleTeardown(session, request)
                 else -> {
-                    log.info("Unhandled control request {} {}", method, request.uri())
+                    // Not part of the mirroring control protocol: hand it to the casting
+                    // handler further down the pipeline instead of answering here.
+                    response.release()
+                    ctx.fireChannelRead(request.retain())
+                    return
                 }
             }
         } catch (e: Exception) {
@@ -217,7 +226,11 @@ internal class ControlHandler(
     }
 
     private fun createResponse(request: FullHttpRequest): DefaultFullHttpResponse {
-        val response = DefaultFullHttpResponse(RtspVersions.RTSP_1_0, RtspResponseStatuses.OK)
+        // Answer in the protocol the sender used: RTSP/1.0 for mirroring control,
+        // HTTP/1.1 for the plain-HTTP requests that share this port.
+        val version = request.protocolVersion().takeIf { it.text().startsWith("RTSP") }
+            ?: RtspVersions.RTSP_1_0
+        val response = DefaultFullHttpResponse(version, RtspResponseStatuses.OK)
         response.headers().clear()
         request.headers().get(HEADER_CSEQ)?.let { response.headers().add(HEADER_CSEQ, it) }
         response.headers().add("Server", SERVER_VERSION)
@@ -238,10 +251,20 @@ internal class ControlHandler(
         private const val HEADER_ACTIVE_REMOTE = "Active-Remote"
         private const val TIMING_PORT = 7011
         const val SERVER_VERSION = "AirTunes/220.68"
+        const val CONTENT_TYPE_BINARY_PLIST = "application/x-apple-binary-plist"
     }
 }
 
-/** RTSP control server bound on the `_raop._tcp` port. */
+/**
+ * Binds a receiver port serving the *whole* protocol: mirroring control (pairing,
+ * FairPlay, RTSP SETUP/RECORD/TEARDOWN) and, for anything the control handler declines,
+ * the casting endpoints.
+ *
+ * Both advertised services get this same pipeline, because a sender may run the session
+ * over either the `_airplay._tcp` or the `_raop._tcp` port, and the two protocols share
+ * one connection. [RtspDecoder] is used rather than an HTTP codec because it is the only
+ * one that decodes both RTSP and HTTP request lines (see CodecCompatibilityTest).
+ */
 internal object ControlServer {
 
     private val log = LoggerFactory.getLogger(ControlServer::class.java)
@@ -251,28 +274,30 @@ internal object ControlServer {
         workerGroup: EventLoopGroup,
         dataGroup: EventLoopGroup,
         config: AirPlayConfig,
+        port: Int,
         sessions: SessionManager,
         listener: AirPlayListener,
+        publicKeyHex: String,
     ): Channel {
         val bootstrap = ServerBootstrap()
             .group(bossGroup, workerGroup)
             .channel(NioServerSocketChannel::class.java)
-            .localAddress(InetSocketAddress(config.airtunesPort))
+            .localAddress(InetSocketAddress(port))
             .childHandler(object : ChannelInitializer<SocketChannel>() {
                 override fun initChannel(ch: SocketChannel) {
-                    ch.pipeline().addLast(
-                        RtspDecoder(),
-                        RtspEncoder(),
-                        HttpObjectAggregator(64 * 1024),
-                        ControlHandler(config, sessions, dataGroup, listener),
-                    )
+                    ch.pipeline().addLast(CastHandler.NAME_DECODER, RtspDecoder())
+                    ch.pipeline().addLast(CastHandler.NAME_ENCODER, RtspEncoder())
+                    // Photos arrive as a single large body.
+                    ch.pipeline().addLast(CastHandler.NAME_AGGREGATOR, HttpObjectAggregator(32 * 1024 * 1024))
+                    ch.pipeline().addLast(ControlHandler(config, sessions, dataGroup, listener, publicKeyHex))
+                    ch.pipeline().addLast(CastHandler(config, sessions, listener, publicKeyHex))
                 }
             })
             .childOption(ChannelOption.TCP_NODELAY, true)
             .childOption(ChannelOption.SO_KEEPALIVE, true)
             .option(ChannelOption.SO_REUSEADDR, true)
         val channel = bootstrap.bind().sync().channel()
-        log.info("Control server (RTSP) listening on port {}", config.airtunesPort)
+        log.info("Receiver control server listening on port {}", port)
         return channel
     }
 }

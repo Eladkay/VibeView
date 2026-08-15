@@ -45,6 +45,19 @@ class Pairing {
         this.keyPair = new KeyPairGenerator().generateKeyPair();
     }
 
+    /**
+     * VibeView addition: use a caller-supplied device key pair, so the public key
+     * advertised over Bonjour and in /info is the one pair-setup actually returns.
+     */
+    Pairing(KeyPair keyPair) {
+        this.keyPair = keyPair;
+    }
+
+    /** VibeView addition: the raw Ed25519 public key bytes advertised as {@code pk}. */
+    byte[] publicKeyBytes() {
+        return ((EdDSAPublicKey) keyPair.getPublic()).getAbyte();
+    }
+
     void info(OutputStream out) throws Exception {
         URL response = Pairing.class.getResource("/info-response.xml");
         NSObject serverInfo = PropertyListParser.parse(response.openStream());
