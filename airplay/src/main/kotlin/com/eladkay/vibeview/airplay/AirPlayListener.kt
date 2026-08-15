@@ -61,7 +61,9 @@ data class AirPlayAudioFormat(
     enum class Compression { PCM, ALAC, AAC_LC, AAC_ELD, OPUS }
 
     companion object {
-        fun from(info: AudioStreamInfo): AirPlayAudioFormat {
+        /** Maps the negotiated RTSP stream info to a public format. Module-internal:
+         *  keeps the jap2lib [AudioStreamInfo] type out of the public API surface. */
+        internal fun from(info: AudioStreamInfo): AirPlayAudioFormat {
             val compression = when (info.compressionType) {
                 AudioStreamInfo.CompressionType.LPCM -> Compression.PCM
                 AudioStreamInfo.CompressionType.ALAC -> Compression.ALAC
