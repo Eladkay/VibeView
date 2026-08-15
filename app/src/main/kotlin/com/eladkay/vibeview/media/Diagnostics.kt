@@ -15,9 +15,11 @@ object Diagnostics {
     private val framesReceived = AtomicLong()
     private val framesDecoded = AtomicLong()
     private val framesDropped = AtomicLong()
+    private val renderSkips = AtomicLong()
     private val videoBytes = AtomicLong()
     private val audioFramesReceived = AtomicLong()
     private val audioFramesDecoded = AtomicLong()
+    private val audioFramesDropped = AtomicLong()
 
     private val queueDepth = AtomicInteger()
 
@@ -44,6 +46,7 @@ object Diagnostics {
     private var lastFramesReceived = 0L
     private var lastFramesDecoded = 0L
     private var lastFramesDropped = 0L
+    private var lastRenderSkips = 0L
     private var lastVideoBytes = 0L
 
     fun onVideoFrameReceived(bytes: Int) {
@@ -51,8 +54,17 @@ object Diagnostics {
         videoBytes.addAndGet(bytes.toLong())
     }
 
-    fun onVideoFrameDropped() {
-        framesDropped.incrementAndGet()
+    /** Frames thrown away before the decoder saw them: the picture breaks until the next IDR. */
+    fun onVideoFramesDropped(count: Int) {
+        if (count > 0) framesDropped.addAndGet(count.toLong())
+    }
+
+    /**
+     * A decoded frame released without presenting it. Unlike a drop this is free —
+     * references stay intact and only the display rate dips while catching up.
+     */
+    fun onVideoRenderSkipped() {
+        renderSkips.incrementAndGet()
     }
 
     /** @param latencyMicros time from feeding the decoder to the frame being ready */
@@ -69,6 +81,9 @@ object Diagnostics {
 
     fun onAudioFrameDecoded() = audioFramesDecoded.incrementAndGet()
 
+    /** Audio discarded to stop the backlog — and with it the lag — from growing. */
+    fun onAudioFrameDropped() = audioFramesDropped.incrementAndGet()
+
     fun setQueueDepth(depth: Int) = queueDepth.set(depth)
 
     /** Clears media counters for a new session; the protocol trace is kept. */
@@ -76,9 +91,11 @@ object Diagnostics {
         framesReceived.set(0)
         framesDecoded.set(0)
         framesDropped.set(0)
+        renderSkips.set(0)
         videoBytes.set(0)
         audioFramesReceived.set(0)
         audioFramesDecoded.set(0)
+        audioFramesDropped.set(0)
         queueDepth.set(0)
         decoderLatencyMs = 0.0
         videoCodec = "—"
@@ -89,6 +106,7 @@ object Diagnostics {
         lastFramesReceived = 0
         lastFramesDecoded = 0
         lastFramesDropped = 0
+        lastRenderSkips = 0
         lastVideoBytes = 0
     }
 
@@ -104,22 +122,28 @@ object Diagnostics {
         val received = framesReceived.get()
         val decoded = framesDecoded.get()
         val dropped = framesDropped.get()
+        val skipped = renderSkips.get()
         val bytes = videoBytes.get()
 
         val inFps = ((received - lastFramesReceived) / elapsed).coerceAtLeast(0.0)
-        val outFps = ((decoded - lastFramesDecoded) / elapsed).coerceAtLeast(0.0)
+        val decodeFps = ((decoded - lastFramesDecoded) / elapsed).coerceAtLeast(0.0)
+        val skipRate = ((skipped - lastRenderSkips) / elapsed).coerceAtLeast(0.0)
         val dropRate = ((dropped - lastFramesDropped) / elapsed).coerceAtLeast(0.0)
         val kbps = ((bytes - lastVideoBytes) * 8 / 1000.0 / elapsed).coerceAtLeast(0.0)
 
         lastFramesReceived = received
         lastFramesDecoded = decoded
         lastFramesDropped = dropped
+        lastRenderSkips = skipped
         lastVideoBytes = bytes
 
         val resolution = if (videoWidth > 0) "${videoWidth}x$videoHeight" else "—"
+        val audioDropped = audioFramesDropped.get()
         return buildString {
             append("video  ").append(videoCodec).append("  ").append(resolution).append('\n')
-            append("fps    in %.1f / out %.1f".format(inFps, outFps))
+            // "shown" is what reaches the panel; the gap to "decoded" is catch-up.
+            append("fps    in %.1f / shown %.1f".format(inFps, (decodeFps - skipRate).coerceAtLeast(0.0)))
+            if (skipRate > 0) append("  skipped %.1f/s".format(skipRate))
             if (dropRate > 0) append("  dropped %.1f/s".format(dropRate))
             append('\n')
             append("rate   %.0f kbps\n".format(kbps))
@@ -127,7 +151,10 @@ object Diagnostics {
             append("audio  ").append(audioFormat)
             append("  frames ").append(audioFramesDecoded.get())
             append('/').append(audioFramesReceived.get())
-            if (dropped > 0) append("\ntotal  dropped ").append(dropped)
+            if (audioDropped > 0) append(" (-").append(audioDropped).append(')')
+            if (dropped > 0 || skipped > 0) {
+                append("\ntotal  dropped ").append(dropped).append(", skipped ").append(skipped)
+            }
         }
     }
 }

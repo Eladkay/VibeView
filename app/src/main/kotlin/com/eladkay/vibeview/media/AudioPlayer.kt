@@ -6,6 +6,7 @@ import android.media.AudioTrack
 import android.media.MediaCodec
 import android.media.MediaCodecList
 import android.media.MediaFormat
+import android.os.Process
 import android.util.Log
 import com.eladkay.vibeview.airplay.AirPlayAudioFormat
 import java.nio.ByteBuffer
@@ -29,7 +30,7 @@ class AudioPlayer private constructor(
     private val mime: String,
     private val codecSpecificData: List<ByteArray>,
 ) {
-    private val queue = ArrayBlockingQueue<ByteArray>(QUEUE_CAPACITY)
+    private val queue = ArrayBlockingQueue<ByteArray>(queueCapacity(format))
     private val running = AtomicBoolean(true)
     private val thread = Thread({ playLoop() }, "AudioPlayer").apply { start() }
 
@@ -38,6 +39,7 @@ class AudioPlayer private constructor(
         Diagnostics.onAudioFrameReceived()
         while (!queue.offer(frame)) {
             queue.poll() // drop oldest: fresher audio matters more than completeness
+            Diagnostics.onAudioFrameDropped()
         }
     }
 
@@ -50,6 +52,9 @@ class AudioPlayer private constructor(
     private fun playLoop() {
         var codec: MediaCodec? = null
         var track: AudioTrack? = null
+        // A small AudioTrack buffer only stays underrun-free if this thread is scheduled
+        // promptly; at default priority it competes with the network and decode threads.
+        runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO) }
         try {
             if (decodeWithCodec) {
                 codec = createCodec()
@@ -136,7 +141,10 @@ class AudioPlayer private constructor(
         val channelMask =
             if (channels >= 2) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
         val minBuffer = AudioTrack.getMinBufferSize(sampleRate, channelMask, AudioFormat.ENCODING_PCM_16BIT)
-        val bufferSize = (if (minBuffer > 0) minBuffer else 4096) * 2
+        // Everything in this buffer is latency. Doubling it bought jitter tolerance that
+        // the input queue already provides, and an oversized buffer also makes the
+        // low-latency performance mode below a no-op on most devices.
+        val bufferSize = if (minBuffer > 0) minBuffer else DEFAULT_BUFFER_BYTES
         return AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -198,9 +206,32 @@ class AudioPlayer private constructor(
 
     companion object {
         private const val TAG = "AudioPlayer"
-        private const val QUEUE_CAPACITY = 256
         private const val INPUT_TIMEOUT_US = 20_000L
         private const val MIME_ALAC = "audio/alac"
+
+        /** How much audio may sit queued ahead of the decoder. */
+        private const val TARGET_BUFFER_MS = 120.0
+        private const val MIN_QUEUE_FRAMES = 4
+        private const val MAX_QUEUE_FRAMES = 24
+        private const val DEFAULT_SAMPLES_PER_FRAME = 480
+        private const val DEFAULT_SAMPLE_RATE = 44100
+        private const val DEFAULT_BUFFER_BYTES = 4096
+
+        /**
+         * Audio arrives at exactly the rate it plays out, so the queue never drains on
+         * its own: whatever depth it reaches while the codec and track are starting up
+         * is lag the listener hears for the rest of the session. Bounding it in
+         * milliseconds rather than frames keeps that budget the same across codecs —
+         * a flat 256-frame cap meant 2.8 s for AAC-ELD's 480-sample frames but only
+         * 1.2 s for AAC-LC's 1024-sample ones.
+         */
+        private fun queueCapacity(format: AirPlayAudioFormat): Int {
+            val samples =
+                if (format.samplesPerFrame > 0) format.samplesPerFrame else DEFAULT_SAMPLES_PER_FRAME
+            val rate = if (format.sampleRate > 0) format.sampleRate else DEFAULT_SAMPLE_RATE
+            val frameMs = samples * 1000.0 / rate
+            return (TARGET_BUFFER_MS / frameMs).toInt().coerceIn(MIN_QUEUE_FRAMES, MAX_QUEUE_FRAMES)
+        }
         private const val OPUS_PRE_SKIP_SAMPLES = 3840L // 80 ms at 48 kHz, Opus default
         private const val OPUS_SEEK_PREROLL_NS = 80_000_000L
 

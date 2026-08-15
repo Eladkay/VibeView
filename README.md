@@ -15,10 +15,11 @@ phones and other devices can cast media to it too.
 - **Mirroring audio** — the audio accompanying mirroring is decoded and played
   in sync. AAC-ELD (mirroring's usual codec), AAC-LC, ALAC, and raw PCM are all
   handled; ALAC and Opus use the device's platform decoders where present.
-- **Low latency** — the video decoder runs in MediaCodec low-latency mode with a
-  small, drop-oldest frame backlog, and audio uses a low-latency AudioTrack, so
-  the mirrored image tracks the source closely and recovers fast after network
-  hiccups.
+- **Low latency** — the video decoder runs in MediaCodec low-latency mode, and
+  both pipelines keep only a few hundred milliseconds of buffering so latency
+  cannot quietly accumulate. When the receiver does fall behind, it catches up by
+  decoding frames without presenting them rather than by discarding them, so the
+  picture stays clean while the stream returns to live.
 - **Video casting** — a sender that pushes a plain video URL (HLS or
   progressive) plays natively through ExoPlayer with play/pause/seek honored.
   This works over DLNA today; **AirPlay video casting from iOS does not yet

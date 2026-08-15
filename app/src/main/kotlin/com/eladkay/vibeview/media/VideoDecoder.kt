@@ -3,6 +3,7 @@ package com.eladkay.vibeview.media
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.os.Build
+import android.os.Process
 import android.util.Log
 import android.view.Surface
 import java.util.concurrent.ArrayBlockingQueue
@@ -22,6 +23,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  * discarded frame can freeze the picture until it does. The input path therefore works
  * hard to hand every frame to the decoder rather than giving up after one attempt.
  *
+ * Catching up is done on the *output* side instead. Presenting a frame is paced by the
+ * display, so a 60 fps sender on a 60 Hz panel has no headroom: any backlog the pipeline
+ * picks up — a network burst, a busy moment on the sender — would otherwise stay for the
+ * rest of the session and keep growing until the queue overflowed. Releasing a decoded
+ * frame without presenting it costs nothing (references stay intact) and is what lets the
+ * stream return to live, so while the queue is deep only the newest frames are shown.
+ *
  * @param trace receives protocol-level notes for the diagnostics overlay and logcat
  */
 class VideoDecoder(
@@ -31,6 +39,7 @@ class VideoDecoder(
     private val queue = ArrayBlockingQueue<ByteArray>(QUEUE_CAPACITY)
     private val running = AtomicBoolean(false)
     private val released = AtomicBoolean(false)
+    private val resyncRequested = AtomicBoolean(false)
 
     @Volatile private var surface: Surface? = null
     @Volatile private var lastConfig: ByteArray? = null
@@ -38,6 +47,8 @@ class VideoDecoder(
 
     private var droppedInput = 0L
     private var decodedFrames = 0L
+    private var skippedRenders = 0L
+    private var resyncs = 0L
 
     fun enqueue(data: ByteArray) {
         if (released.get()) return
@@ -45,9 +56,16 @@ class VideoDecoder(
             lastConfig = data
         }
         Diagnostics.onVideoFrameReceived(data.size)
-        while (!queue.offer(data)) {
-            queue.poll() // drop oldest under sustained pressure; re-syncs on next IDR
-            Diagnostics.onVideoFrameDropped()
+        if (!queue.offer(data)) {
+            // The decoder is a full queue behind and skipping presentation has not been
+            // enough to catch up. Handing it a stream with a hole in it produces a smear
+            // of broken references for as long as the hole is referenced, so drop the
+            // whole backlog and re-enter cleanly at the sender's next keyframe.
+            val discarded = queue.size
+            queue.clear()
+            Diagnostics.onVideoFramesDropped(discarded)
+            resyncRequested.set(true)
+            queue.offer(data)
         }
         Diagnostics.setQueueDepth(queue.size)
     }
@@ -83,6 +101,11 @@ class VideoDecoder(
         var codec: MediaCodec? = null
         droppedInput = 0
         decodedFrames = 0
+        skippedRenders = 0
+        resyncs = 0
+        // Feeding and presenting frames is latency-critical; without this the decode
+        // thread competes with the network and UI threads at plain default priority.
+        runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_DISPLAY) }
         try {
             val outputSurface = surface ?: return
             codec = MediaCodec.createDecoderByType(MIME)
@@ -111,6 +134,14 @@ class VideoDecoder(
             }
 
             while (running.get() && !released.get()) {
+                if (resyncRequested.compareAndSet(true, false)) {
+                    resyncs++
+                    sawKeyframe = false
+                    waitingLogged = false
+                    if (resyncs == 1L) {
+                        trace("  !! input backlog overflowed; resyncing at the next keyframe")
+                    }
+                }
                 val chunk = queue.poll(100, TimeUnit.MILLISECONDS)
                 if (chunk != null) {
                     val isConfig = isConfigChunk(chunk)
@@ -129,7 +160,12 @@ class VideoDecoder(
                         }
                         if (!sawKeyframe) trace("   keyframe found, decoding")
                         sawKeyframe = true
-                        submit(codec, chunk, 0)
+                        if (!submit(codec, chunk, 0)) {
+                            // The frame never reached the decoder, so everything that
+                            // references it would decode into a smear. Wait it out.
+                            sawKeyframe = false
+                            waitingLogged = false
+                        }
                     }
                 }
                 drainOutputs(codec)
@@ -146,7 +182,10 @@ class VideoDecoder(
             Log.e(TAG, "Decoder failed", e)
             trace("  !! decoder error: ${e.javaClass.simpleName}: ${e.message}")
         } finally {
-            trace("── decoder stopped after $decodedFrames frames ($droppedInput input drops)")
+            trace(
+                "── decoder stopped after $decodedFrames frames " +
+                    "($droppedInput input drops, $skippedRenders skipped, $resyncs resyncs)"
+            )
             runCatching { codec?.stop() }
             runCatching { codec?.release() }
         }
@@ -206,17 +245,27 @@ class VideoDecoder(
                     }
                 }
                 else -> if (index >= 0) {
+                    // Presenting is vsync-paced, so while frames are stacking up behind
+                    // this one, showing it would only hold the backlog in place. Skip
+                    // straight to the newest picture instead — the decoder has already
+                    // done the work and the reference chain is unaffected.
+                    val render = info.size > 0 && queue.size < CATCHUP_DEPTH
                     if (info.size > 0) {
                         // presentationTimeUs was stamped with nanoTime/1000 on input,
                         // so this is the decoder's own input-to-output latency.
                         Diagnostics.onVideoFrameDecoded(System.nanoTime() / 1000 - info.presentationTimeUs)
                         decodedFrames++
+                        if (!render) {
+                            skippedRenders++
+                            Diagnostics.onVideoRenderSkipped()
+                            if (skippedRenders == 1L) trace("   behind: showing only the newest frames")
+                        }
                         if (decodedFrames == 1L) trace("   first frame rendered")
                         else if (decodedFrames % FRAME_REPORT_INTERVAL == 0L) {
-                            trace("   $decodedFrames frames rendered")
+                            trace("   $decodedFrames frames ($skippedRenders skipped, $resyncs resyncs)")
                         }
                     }
-                    codec.releaseOutputBuffer(index, info.size > 0)
+                    codec.releaseOutputBuffer(index, render)
                     Diagnostics.setQueueDepth(queue.size)
                 }
             }
@@ -235,13 +284,23 @@ class VideoDecoder(
         private const val TAG = "VideoDecoder"
         private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
 
-        // Enough headroom to ride out a network burst without discarding frames, which
-        // would break decoding until the sender's next keyframe.
-        private const val QUEUE_CAPACITY = 60
-        private const val INPUT_TIMEOUT_US = 10_000L
+        // Headroom to ride out a network burst without discarding frames, which would
+        // break decoding until the sender's next keyframe — but no more than that, since
+        // a queued frame the decoder has not reached yet is latency the viewer feels.
+        // At 60 fps this bounds the input backlog at ~0.4 s.
+        private const val QUEUE_CAPACITY = 24
 
-        /** Total time to wait for a decoder input buffer before giving up on a frame. */
-        private const val SUBMIT_BUDGET_US = 500_000L
+        /** Backlog at which frames are decoded but no longer presented, to catch up. */
+        private const val CATCHUP_DEPTH = 3
+
+        private const val INPUT_TIMEOUT_US = 5_000L
+
+        /**
+         * Total time to wait for a decoder input buffer before giving up on a frame.
+         * Long enough to outlast a stall, short enough that the wait itself does not
+         * fill the queue behind it.
+         */
+        private const val SUBMIT_BUDGET_US = 150_000L
         private const val TARGET_FRAME_RATE = 60
         private const val FRAME_REPORT_INTERVAL = 300L
         private const val DEFAULT_WIDTH = 1920
