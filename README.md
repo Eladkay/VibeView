@@ -19,10 +19,10 @@ phones and other devices can cast media to it too.
   small, drop-oldest frame backlog, and audio uses a low-latency AudioTrack, so
   the mirrored image tracks the source closely and recovers fast after network
   hiccups.
-- **Video casting** — tap the AirPlay icon in an app that shares plain video
-  URLs (HLS or progressive) and VibeView plays the stream natively with
-  ExoPlayer, honoring play/pause/seek from the sender. (DRM-protected apps
-  like Netflix will not work — see limitations.)
+- **Video casting** — a sender that pushes a plain video URL (HLS or
+  progressive) plays natively through ExoPlayer with play/pause/seek honored.
+  This works over DLNA today; **AirPlay video casting from iOS does not yet
+  work** — see limitations. Mirroring a video-playing app works fine.
 - **Photo casting** — share a photo from the iOS Photos app and it appears on
   the TV.
 - **DLNA / UPnP renderer** — VibeView advertises itself as a MediaRenderer, so
@@ -137,6 +137,14 @@ and hands Annex-B video / raw audio frames to the app, which feeds them to
 
 ## Limitations & roadmap
 
+- **AirPlay video casting from iOS is not supported yet.** Tapping the AirPlay
+  icon inside an app (YouTube and friends) starts a second session on the
+  `_airplay._tcp` port that requires a **FairPlay version 1** handshake
+  (`/fp-setup2`), while the vendored protocol core implements only the
+  version 3 handshake that screen mirroring uses. The receiver now answers
+  that request with `501 Not Implemented` instead of a misleading empty `200`,
+  so the sender fails fast rather than half-connecting. Workarounds: mirror the
+  screen instead (the video plays inside the mirror), or cast over DLNA.
 - **No DRM**: apps that protect their streams with FairPlay DRM (Netflix,
   Disney+, Apple TV+…) will refuse to cast or show a black screen. Mirroring
   the screen still works for everything that isn't HDCP-protected on the

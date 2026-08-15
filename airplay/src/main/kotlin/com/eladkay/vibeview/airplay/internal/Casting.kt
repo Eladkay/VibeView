@@ -125,9 +125,21 @@ internal class CastHandler(
                 path == "/pair-verify" -> session.airPlay.pairVerify(
                     ByteBufInputStream(request.content()), ByteBufOutputStream(response.content())
                 )
-                path == "/fp-setup" || path == "/fp-setup2" -> session.airPlay.fairPlaySetup(
-                    ByteBufInputStream(request.content()), ByteBufOutputStream(response.content())
-                )
+                path == "/fp-setup" || path == "/fp-setup2" -> {
+                    val version = fairPlayVersion(request)
+                    if (version == FAIRPLAY_VERSION_SUPPORTED) {
+                        session.airPlay.fairPlaySetup(
+                            ByteBufInputStream(request.content()), ByteBufOutputStream(response.content())
+                        )
+                    } else {
+                        // Answering 200 with an empty body would tell the sender the
+                        // handshake succeeded and leave it to fail confusingly later.
+                        listener.onProtocolEvent(
+                            "  !! FairPlay v$version ($path) is not implemented — AirPlay video casting needs it"
+                        )
+                        response.setStatus(HttpResponseStatus.NOT_IMPLEMENTED)
+                    }
+                }
                 path.startsWith("/info") -> {
                     response.content().writeBytes(InfoResponse.build(config, publicKeyHex, config.pairingId))
                     response.headers().set(HttpHeaderNames.CONTENT_TYPE, ControlHandler.CONTENT_TYPE_BINARY_PLIST)
@@ -163,10 +175,14 @@ internal class CastHandler(
                 ctx.close()
                 return@addListener
             }
+            // The connection now runs backwards: we issue requests and the sender
+            // answers, so every server-side handler must go, including the control
+            // handler ahead of this one, before installing the client codec.
             val pipeline = ctx.pipeline()
-            pipeline.remove(NAME_AGGREGATOR)
-            pipeline.remove(NAME_DECODER)
-            pipeline.remove(NAME_ENCODER)
+            runCatching { pipeline.remove(NAME_AGGREGATOR) }
+            runCatching { pipeline.remove(NAME_DECODER) }
+            runCatching { pipeline.remove(NAME_ENCODER) }
+            runCatching { pipeline.remove(ControlHandler::class.java) }
             pipeline.addLast(HttpClientCodec(), HttpObjectAggregator(64 * 1024), EventResponseHandler(session, listener))
             pipeline.remove(this)
             session.eventChannel = ctx.channel()
@@ -193,8 +209,16 @@ internal class CastHandler(
         ctx.close()
     }
 
+    /** Version byte of a FairPlay `FPLY` message; -1 when the body is too short. */
+    private fun fairPlayVersion(request: FullHttpRequest): Int {
+        val content = request.content()
+        if (content.readableBytes() < 5) return -1
+        return content.getByte(content.readerIndex() + 4).toInt() and 0xFF
+    }
+
     companion object {
         private val log = LoggerFactory.getLogger(CastHandler::class.java)
+        const val FAIRPLAY_VERSION_SUPPORTED = 3
         private const val HEADER_SESSION_ID = "X-Apple-Session-ID"
         private const val HEADER_ACTIVE_REMOTE = "Active-Remote"
         const val NAME_DECODER = "codec-decoder"
