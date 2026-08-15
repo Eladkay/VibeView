@@ -1,0 +1,103 @@
+package com.eladkay.vibeview.airplay
+
+import com.github.serezhka.jap2lib.rtsp.AudioStreamInfo
+
+/**
+ * Callbacks from the AirPlay receiver. All methods are invoked on Netty I/O threads;
+ * implementations must hand work off to their own executors and never block.
+ */
+interface AirPlayListener {
+
+    /** A mirroring session completed RTSP SETUP for video. */
+    fun onMirroringStarted() {}
+
+    /**
+     * Decrypted H.264 video in Annex-B format (start-code delimited NAL units).
+     * SPS/PPS arrive through this callback too, ahead of the frames that need them.
+     */
+    fun onVideoData(data: ByteArray)
+
+    /** Source/display dimensions announced in the mirror stream's codec-data packet. */
+    fun onVideoFormat(widthSource: Int, heightSource: Int, width: Int, height: Int) {}
+
+    /** Audio stream negotiated. Frames follow via [onAudioData]. */
+    fun onAudioFormat(format: AirPlayAudioFormat) {}
+
+    /** One decrypted compressed audio frame (AAC-ELD/AAC-LC/ALAC depending on format). */
+    fun onAudioData(frame: ByteArray) {}
+
+    /** The mirroring session ended (TEARDOWN or connection loss). */
+    fun onMirroringStopped() {}
+
+    /**
+     * Client asked us to play a media URL (video casting).
+     * [startPosition] is a 0..1 fraction of the media duration.
+     */
+    fun onCastPlay(url: String, startPosition: Double) {}
+
+    /** Rate change: 0 = pause, 1 = play. */
+    fun onCastRate(rate: Float) {}
+
+    /** Absolute seek, in seconds. */
+    fun onCastSeek(positionSeconds: Double) {}
+
+    /** Casting session stopped by the client. */
+    fun onCastStop() {}
+
+    /** A photo was pushed for display (AirPlay photo casting). */
+    fun onPhoto(jpeg: ByteArray) {}
+
+    /** Pull-model status used to answer `GET /scrub` and `GET /playback-info`. */
+    fun castStatus(): CastStatus = CastStatus()
+}
+
+/** Negotiated mirroring/streaming audio format. */
+data class AirPlayAudioFormat(
+    val compression: Compression,
+    val sampleRate: Int,
+    val channels: Int,
+    val samplesPerFrame: Int,
+) {
+    enum class Compression { PCM, ALAC, AAC_LC, AAC_ELD, OPUS }
+
+    companion object {
+        fun from(info: AudioStreamInfo): AirPlayAudioFormat {
+            val compression = when (info.compressionType) {
+                AudioStreamInfo.CompressionType.LPCM -> Compression.PCM
+                AudioStreamInfo.CompressionType.ALAC -> Compression.ALAC
+                AudioStreamInfo.CompressionType.AAC -> Compression.AAC_LC
+                AudioStreamInfo.CompressionType.AAC_ELD -> Compression.AAC_ELD
+                AudioStreamInfo.CompressionType.OPUS -> Compression.OPUS
+                else -> Compression.AAC_ELD
+            }
+            // Format enum names look like AAC_ELD_44100_2 / PCM_48000_16_2 / ALAC_44100_16_2;
+            // rate and channel count are always the trailing numeric fields.
+            var sampleRate = 44100
+            var channels = 2
+            info.audioFormat?.let { format ->
+                val parts = format.name.split('_').mapNotNull { it.toIntOrNull() }
+                val numbers = parts.filter { it >= 8000 }
+                if (numbers.isNotEmpty()) sampleRate = numbers.first()
+                channels = parts.lastOrNull()?.takeIf { it in 1..8 } ?: 2
+            }
+            val spf = if (info.samplesPerFrame > 0) info.samplesPerFrame else 480
+            return AirPlayAudioFormat(compression, sampleRate, channels, spf)
+        }
+    }
+}
+
+/** Playback status reported back to the casting client. Times in seconds. */
+data class CastStatus(
+    val duration: Double = 0.0,
+    val position: Double = 0.0,
+    val rate: Float = 0f,
+    val readyToPlay: Boolean = false,
+)
+
+/** Coarse cast playback states pushed to the client over the reverse event channel. */
+enum class CastState(val wireName: String) {
+    LOADING("loading"),
+    PLAYING("playing"),
+    PAUSED("paused"),
+    STOPPED("stopped"),
+}

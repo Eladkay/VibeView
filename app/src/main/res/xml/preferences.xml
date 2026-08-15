@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory android:title="@string/settings_category_receiver">
+
+        <EditTextPreference
+            android:key="device_name"
+            android:title="@string/settings_device_name"
+            app:useSimpleSummaryProvider="true" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:key="audio_enabled"
+            android:summary="@string/settings_audio_summary"
+            android:title="@string/settings_audio" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:key="autostart"
+            android:summary="@string/settings_autostart_summary"
+            android:title="@string/settings_autostart" />
+    </PreferenceCategory>
+</PreferenceScreen>

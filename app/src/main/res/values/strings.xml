@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VibeView</string>
+    <string name="idle_subtitle">AirPlay screen mirroring receiver</string>
+    <string name="idle_instructions">On your iPhone, iPad, or Mac:\nopen Control Center, tap Screen Mirroring, and choose “%1$s”.</string>
+    <string name="idle_settings_hint">Press OK for settings</string>
+    <string name="status_ready">Ready on %1$s</string>
+    <string name="status_starting">Starting receiver…</string>
+    <string name="status_no_network">No network connection found</string>
+    <string name="photo_content_description">Photo shared over AirPlay</string>
+
+    <string name="notification_channel">AirPlay receiver</string>
+    <string name="notification_text">Discoverable as “%1$s”</string>
+
+    <string name="settings_category_receiver">Receiver</string>
+    <string name="settings_device_name">Device name</string>
+    <string name="settings_audio">Play audio</string>
+    <string name="settings_audio_summary">Play the sound sent with screen mirroring</string>
+    <string name="settings_autostart">Start on boot</string>
+    <string name="settings_autostart_summary">Make this TV AirPlay-discoverable after it restarts</string>
+</resources>
