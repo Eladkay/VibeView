@@ -33,7 +33,7 @@ casting and photo sharing.
 ## Install
 
 **From CI:** every push runs the
-[Build workflow](.github/workflows/build.yaml), which assembles a debug APK
+[Build workflow](.github/workflows/build.yml), which assembles a debug APK
 and uploads it as the `vibeview-debug-apk` artifact. Download it from the
 Actions run and sideload it:
 
@@ -121,7 +121,7 @@ and hands Annex-B video / raw audio frames to the app, which feeds them to
 - `./gradlew :airplay:test` — protocol unit tests (framing, plists, FairPlay
   vectors) run on any JDK 17+, no Android SDK needed.
 - `./gradlew :app:assembleDebug` — needs an Android SDK. CI
-  ([`.github/workflows/build.yaml`](.github/workflows/build.yaml)) runs this
+  ([`.github/workflows/build.yml`](.github/workflows/build.yml)) runs this
   on every push and publishes the APK as an artifact.
 
 ## Legal
