@@ -1,5 +1,8 @@
 package com.eladkay.vibeview.airplay.internal
 
+import com.dd.plist.NSArray
+import com.dd.plist.NSDictionary
+import com.dd.plist.PropertyListParser
 import com.eladkay.vibeview.airplay.AirPlayAudioFormat
 import com.eladkay.vibeview.airplay.AirPlayConfig
 import com.eladkay.vibeview.airplay.AirPlayListener
@@ -144,7 +147,11 @@ internal class ControlHandler(
     private fun handleSetup(session: Session, request: FullHttpRequest, response: DefaultFullHttpResponse) {
         val streamInfo: MediaStreamInfo? = runCatching {
             session.airPlay.rtspGetMediaStreamInfo(ByteBufInputStream(request.content().duplicate()))
+        }.onFailure {
+            listener.onProtocolEvent("  !! SETUP stream-info parse failed: ${it.javaClass.simpleName}: ${it.message}")
         }.getOrNull()
+
+        listener.onProtocolEvent("   SETUP ${describeSetupBody(request)} → ${streamInfo?.streamType ?: "encryption"}")
 
         when (streamInfo?.streamType) {
             null -> {
@@ -160,6 +167,7 @@ internal class ControlHandler(
                     ByteBufOutputStream(response.content()),
                     config.mirrorDataPort, config.airtunesPort, TIMING_PORT
                 )
+                listener.onProtocolEvent("   → video dataPort=${config.mirrorDataPort}, awaiting mirror stream")
                 listener.onMirroringStarted()
             }
             MediaStreamInfo.StreamType.AUDIO -> {
@@ -175,7 +183,32 @@ internal class ControlHandler(
                 session.airPlay.rtspSetupAudio(
                     ByteBufOutputStream(response.content()), data.localPort(), control.localPort()
                 )
+                listener.onProtocolEvent("   → audio $audioFormat dataPort=${data.localPort()}")
             }
+        }
+    }
+
+    /**
+     * Summarises a SETUP body by its top-level plist keys. An encryption SETUP carries
+     * `ekey`/`eiv`; a stream SETUP carries `streams`. Seeing which arrived — and whether
+     * it parsed at all — is the difference between "no video sent" and "video request
+     * misread".
+     */
+    private fun describeSetupBody(request: FullHttpRequest): String {
+        val content = request.content()
+        val length = content.readableBytes()
+        if (length == 0) return "empty"
+        val bytes = ByteArray(length)
+        content.getBytes(content.readerIndex(), bytes)
+        return try {
+            val dict = PropertyListParser.parse(bytes) as? NSDictionary
+                ?: return "not-a-dict(${length}B)"
+            val keys = dict.allKeys().joinToString(",")
+            val streams = (dict["streams"] as? NSArray)?.array
+            val types = streams?.mapNotNull { (it as? NSDictionary)?.get("type")?.toJavaObject() }
+            if (types.isNullOrEmpty()) "keys=[$keys]" else "keys=[$keys] streamTypes=$types"
+        } catch (e: Exception) {
+            "unparsed(${length}B): ${e.javaClass.simpleName}"
         }
     }
 

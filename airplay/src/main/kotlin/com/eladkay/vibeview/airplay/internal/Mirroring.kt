@@ -78,28 +78,63 @@ internal class MirrorPacketHandler(
     private val listener: AirPlayListener,
 ) : SimpleChannelInboundHandler<MirrorPacket>() {
 
+    private var packetsSeen = 0L
+    private var reportedVideo = false
+    private var reportedConfig = false
+    private var reportedDecryptFailure = false
+
+    override fun channelActive(ctx: ChannelHandlerContext) {
+        listener.onProtocolEvent("── mirror stream connected")
+        super.channelActive(ctx)
+    }
+
+    override fun channelInactive(ctx: ChannelHandlerContext) {
+        listener.onProtocolEvent("── mirror stream closed after $packetsSeen packets")
+        super.channelInactive(ctx)
+    }
+
     override fun channelRead0(ctx: ChannelHandlerContext, packet: MirrorPacket) {
+        packetsSeen++
         when (packet.payloadType) {
             MirrorPacket.TYPE_VIDEO -> {
                 try {
                     session.airPlay.decryptVideo(packet.payload)
                 } catch (e: Exception) {
                     log.warn("Video decrypt failed: {}", e.toString())
+                    if (!reportedDecryptFailure) {
+                        reportedDecryptFailure = true
+                        listener.onProtocolEvent("  !! video decrypt failed: ${e.javaClass.simpleName}: ${e.message}")
+                    }
                     return
                 }
                 if (VideoPackaging.avccToAnnexBInPlace(packet.payload)) {
+                    if (!reportedVideo) {
+                        reportedVideo = true
+                        listener.onProtocolEvent("   first video frame (${packet.payload.size}B) decoded path OK")
+                    }
                     listener.onVideoData(packet.payload)
                 } else {
                     log.warn("Dropping malformed video payload ({} bytes)", packet.payload.size)
+                    if (!reportedDecryptFailure) {
+                        reportedDecryptFailure = true
+                        listener.onProtocolEvent("  !! video payload not AVCC after decrypt (${packet.payload.size}B)")
+                    }
                 }
             }
             MirrorPacket.TYPE_CODEC_DATA -> {
                 listener.onVideoFormat(packet.widthSource, packet.heightSource, packet.width, packet.height)
                 val parameterSets = VideoPackaging.avccConfigToAnnexB(packet.payload)
                 if (parameterSets != null) {
+                    if (!reportedConfig) {
+                        reportedConfig = true
+                        listener.onProtocolEvent(
+                            "   codec data OK (SPS/PPS ${parameterSets.size}B, ${packet.widthSource}x${packet.heightSource})"
+                        )
+                    }
                     listener.onVideoData(parameterSets)
                 } else {
                     log.warn("Malformed avcC codec data ({} bytes)", packet.payload.size)
+                    listener.onProtocolEvent("  !! malformed codec data (${packet.payload.size}B)")
                 }
             }
             MirrorPacket.TYPE_HEARTBEAT -> { /* keep-alive, nothing to do */ }
@@ -144,6 +179,7 @@ internal object MirroringReceiver {
             .option(ChannelOption.SO_REUSEADDR, true)
         val channel = bootstrap.bind().sync().channel()
         log.info("Mirror data receiver listening on port {}", port)
+        listener.onProtocolEvent("── mirror receiver listening on :$port")
         return channel
     }
 }

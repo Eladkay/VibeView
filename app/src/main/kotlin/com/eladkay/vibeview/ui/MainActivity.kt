@@ -57,7 +57,11 @@ class MainActivity : AppCompatActivity() {
     private val surfaceCallback = object : SurfaceHolder.Callback {
         override fun surfaceCreated(holder: SurfaceHolder) {
             surfaceReady = true
-            ReceiverSessionHub.videoDecoder?.attachSurface(holder.surface)
+            val decoder = ReceiverSessionHub.videoDecoder
+            ReceiverSessionHub.onProtocolEvent(
+                if (decoder != null) "   surface ready → decoder attached" else "   surface ready (no decoder yet)"
+            )
+            decoder?.attachSurface(holder.surface)
         }
 
         override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
@@ -143,7 +147,11 @@ class MainActivity : AppCompatActivity() {
             is ReceiverState.AudioOnly -> Unit // populated by the nowPlaying collector
             is ReceiverState.Mirroring -> {
                 if (surfaceReady) {
+                    ReceiverSessionHub.onProtocolEvent("   mirroring UI shown, attaching surface")
                     ReceiverSessionHub.videoDecoder?.attachSurface(surfaceView.holder.surface)
+                } else {
+                    // Surface is created once the view becomes visible; the callback attaches it.
+                    ReceiverSessionHub.onProtocolEvent("   mirroring UI shown, waiting for surface")
                 }
             }
             is ReceiverState.Casting -> playerView.player = ReceiverSessionHub.castPlayer

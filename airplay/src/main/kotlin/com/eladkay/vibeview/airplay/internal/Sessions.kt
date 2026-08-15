@@ -23,8 +23,13 @@ internal class Session(val key: String, deviceKeyPair: KeyPair?) {
     @Volatile var mirroringActive = false
     @Volatile var castingActive = false
 
+    /**
+     * Waits for the listening socket to actually close: a sender may re-SETUP the video
+     * stream mid-session, and rebinding the same port before the old socket has released
+     * it fails with "address already in use".
+     */
     fun stopMirroring() {
-        mirrorChannel?.close()
+        mirrorChannel?.close()?.awaitUninterruptibly(CLOSE_TIMEOUT_MS)
         mirrorChannel = null
         mirroringActive = false
     }
@@ -34,6 +39,10 @@ internal class Session(val key: String, deviceKeyPair: KeyPair?) {
         audioChannel = null
         audioControlChannel?.close()
         audioControlChannel = null
+    }
+
+    private companion object {
+        const val CLOSE_TIMEOUT_MS = 2000L
     }
 
     fun teardown() {
