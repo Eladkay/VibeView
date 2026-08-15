@@ -19,16 +19,20 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Protocol module tests
-        run: ./gradlew :airplay:test
+        run: ./gradlew :airplay:test :dlna:test
 
-      - name: Assemble debug APK
+      # Builds every flavor (home and production).
+      - name: Assemble debug APKs
         run: ./gradlew :app:assembleDebug
 
-      - name: Upload APK
+      # Flavors put APKs under apk/<flavor>/debug/. Failing when nothing matches
+      # keeps a future output-path change from silently uploading no artifacts.
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: vibeview-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: vibeview-debug-apks
+          path: app/build/outputs/apk/*/debug/*.apk
+          if-no-files-found: error
 
       - name: Upload test reports
         if: failure()
