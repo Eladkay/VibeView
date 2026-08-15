@@ -290,8 +290,12 @@ class VideoDecoder(
         // At 60 fps this bounds the input backlog at ~0.4 s.
         private const val QUEUE_CAPACITY = 24
 
-        /** Backlog at which frames are decoded but no longer presented, to catch up. */
-        private const val CATCHUP_DEPTH = 3
+        /**
+         * Backlog at which frames are decoded but no longer presented, to catch up.
+         * High enough that the bursts TCP delivers normally don't trip it, low enough
+         * that ~60 ms of real backlog is treated as being behind.
+         */
+        private const val CATCHUP_DEPTH = 4
 
         private const val INPUT_TIMEOUT_US = 5_000L
 
