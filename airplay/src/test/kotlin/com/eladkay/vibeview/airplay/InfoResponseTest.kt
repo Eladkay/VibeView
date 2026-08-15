@@ -56,6 +56,30 @@ class InfoResponseTest {
     }
 
     @Test
+    fun `advertises video and mirroring but not FairPlay-protected video`() {
+        val features = InfoResponse.FEATURES_LOW
+        // Bit 2 claims the video path is FairPlay protected. Setting it makes senders
+        // run a FairPlay handshake before POST /play that this receiver cannot answer,
+        // so casting is offered as plain video instead.
+        assertEquals(0L, features and (1L shl 2), "VideoFairPlay (bit 2) must stay clear")
+        assertNotEquals(0L, features and (1L shl 0), "Video (bit 0) must be advertised")
+        assertNotEquals(0L, features and (1L shl 4), "VideoHTTPLiveStreams (bit 4) must be advertised")
+        assertNotEquals(0L, features and (1L shl 7), "Screen mirroring (bit 7) must be advertised")
+    }
+
+    @Test
+    fun `txt record and info report the same features`() {
+        val info = parse()
+        val combined = (InfoResponse.FEATURES_HIGH shl 32) or InfoResponse.FEATURES_LOW
+        assertEquals(combined, info.objectForKey("features").toJavaObject())
+        // Senders cross-check the TXT record against /info, so the two must agree.
+        assertEquals(
+            "0x%X,0x%X".format(InfoResponse.FEATURES_LOW, InfoResponse.FEATURES_HIGH),
+            InfoResponse.FEATURES_TXT,
+        )
+    }
+
+    @Test
     fun `is a binary plist`() {
         val bytes = InfoResponse.build(config, publicKey, config.pairingId)
         assertEquals("bplist", String(bytes, 0, 6, Charsets.US_ASCII))

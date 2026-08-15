@@ -17,10 +17,25 @@ import java.io.ByteArrayOutputStream
  */
 internal object InfoResponse {
 
-    /** Feature bits, split the way the TXT record advertises them. */
-    const val FEATURES_LOW = 0x5A7FFFF7L
+    /**
+     * Feature bits, split the way the TXT record advertises them.
+     *
+     * Bit 2 (`VideoFairPlay`, "video protected with FairPlay DRM") is deliberately
+     * **clear**. Advertising it tells a sender our video-casting path is FairPlay
+     * protected, so it runs a FairPlay handshake (`/fp-setup2`) before `POST /play`
+     * and abandons the session when we cannot complete it. Only the version 3
+     * handshake used by screen mirroring is implemented, so casting is offered as
+     * plain, unprotected video instead.
+     *
+     * Bit 0 (Video), bit 4 (VideoHTTPLiveStreams) and bit 7 (Screen) stay set: they
+     * are what make casting and mirroring available at all.
+     */
+    const val FEATURES_LOW = 0x5A7FFFF3L
     const val FEATURES_HIGH = 0x1EL
     private const val FEATURES_COMBINED = (FEATURES_HIGH shl 32) or FEATURES_LOW
+
+    /** The same value in the `<low>,<high>` form the Bonjour TXT record uses. */
+    val FEATURES_TXT: String = "0x%X,0x%X".format(FEATURES_LOW, FEATURES_HIGH)
 
     const val SOURCE_VERSION = "220.68"
     const val MODEL = "AppleTV3,2"

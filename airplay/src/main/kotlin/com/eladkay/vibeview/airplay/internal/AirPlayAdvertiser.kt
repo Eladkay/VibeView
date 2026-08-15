@@ -64,7 +64,7 @@ internal class AirPlayAdvertiser(
 
     private fun airplayProps(): Map<String, String> = mapOf(
         "deviceid" to config.deviceId,
-        "features" to FEATURES,
+        "features" to InfoResponse.FEATURES_TXT,
         "srcvers" to InfoResponse.SOURCE_VERSION,
         "flags" to "0x4",
         "vv" to "2",
@@ -81,7 +81,7 @@ internal class AirPlayAdvertiser(
         "da" to "true",
         "et" to "0,3,5",
         "vv" to "2",
-        "ft" to FEATURES,
+        "ft" to InfoResponse.FEATURES_TXT,
         "am" to InfoResponse.MODEL,
         "md" to "0,1,2",
         "rhd" to "5.6.0.0",
@@ -99,6 +99,5 @@ internal class AirPlayAdvertiser(
 
     companion object {
         private val log = LoggerFactory.getLogger(AirPlayAdvertiser::class.java)
-        private const val FEATURES = "0x5A7FFFF7,0x1E"
     }
 }

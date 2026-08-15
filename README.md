@@ -151,14 +151,17 @@ and hands Annex-B video / raw audio frames to the app, which feeds them to
 
 ## Limitations & roadmap
 
-- **AirPlay video casting from iOS is not supported yet.** Tapping the AirPlay
-  icon inside an app (YouTube and friends) starts a second session on the
-  `_airplay._tcp` port that requires a **FairPlay version 1** handshake
-  (`/fp-setup2`), while the vendored protocol core implements only the
-  version 3 handshake that screen mirroring uses. The receiver now answers
-  that request with `501 Not Implemented` instead of a misleading empty `200`,
-  so the sender fails fast rather than half-connecting. Workarounds: mirror the
-  screen instead (the video plays inside the mirror), or cast over DLNA.
+- **AirPlay video casting from iOS is unreliable.** Tapping the AirPlay icon
+  inside an app opens a second session on the `_airplay._tcp` port. The
+  receiver no longer advertises `VideoFairPlay` (feature bit 2), so a sender
+  should offer the plain, unprotected video path — `POST /play` with a URL —
+  which is implemented. A sender that insists on a FairPlay-protected video
+  stream cannot be served: only the version 3 handshake used by screen
+  mirroring is implemented, and requests carrying any other FairPlay version
+  (seen at `/fp-setup2`) are answered with `501 Not Implemented` so the sender
+  fails fast instead of half-connecting. No public AirPlay receiver implements
+  those other versions. Reliable alternatives: mirror the screen (the video
+  plays inside the mirror), or cast over DLNA.
 - **No DRM**: apps that protect their streams with FairPlay DRM (Netflix,
   Disney+, Apple TV+…) will refuse to cast or show a black screen. Mirroring
   the screen still works for everything that isn't HDCP-protected on the
