@@ -10,6 +10,8 @@ import com.eladkay.vibeview.airplay.AirPlayServer
 import com.eladkay.vibeview.airplay.CastState
 import com.eladkay.vibeview.airplay.CastStatus
 import com.eladkay.vibeview.airplay.NowPlayingMetadata
+import com.eladkay.vibeview.dlna.DidlLite
+import com.eladkay.vibeview.dlna.DlnaRenderer
 import com.eladkay.vibeview.dlna.DlnaRendererListener
 import com.eladkay.vibeview.dlna.DlnaStatus
 import com.eladkay.vibeview.dlna.TransportState
@@ -96,6 +98,7 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
     @Volatile private var audioPlayer: AudioPlayer? = null
     @Volatile private var castController: CastPlayerController? = null
     @Volatile private var server: AirPlayServer? = null
+    @Volatile private var dlnaRenderer: DlnaRenderer? = null
     @Volatile private var appContext: Context? = null
     @Volatile var audioEnabled: Boolean = true
 
@@ -104,6 +107,10 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
     fun attach(context: Context, server: AirPlayServer) {
         this.appContext = context.applicationContext
         this.server = server
+    }
+
+    fun attachDlna(renderer: DlnaRenderer?) {
+        this.dlnaRenderer = renderer
     }
 
     fun updateServerInfo(info: ServerInfo) {
@@ -224,9 +231,15 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
             stopMirrorPipeline()
             val controller = castController ?: CastPlayerController(
                 context,
-                onState = { state -> server?.notifyCastState(state) },
+                onState = { state ->
+                    server?.notifyCastState(state)
+                    // Mirror the change to DLNA subscribers so their UI tracks playback.
+                    dlnaRenderer?.notifyStateChanged(status())
+                },
             ).also { castController = it }
-            controller.play(url, startPosition)
+            val subtitles = pendingSubtitles
+            pendingSubtitles = emptyList()
+            controller.play(url, startPosition, subtitles)
             _state.value = ReceiverState.Casting(url)
             presentUi()
         }
@@ -274,8 +287,18 @@ object ReceiverSessionHub : AirPlayListener, DlnaRendererListener {
     // ---- DLNA renderer (called on Netty threads; reuses the cast pipeline) ----
 
     @Volatile private var castVolume = 100
+    @Volatile private var pendingSubtitles: List<String> = emptyList()
 
-    override fun onSetUri(uri: String, metadata: String?) = onCastPlay(uri, 0.0)
+    override fun onSetUri(uri: String, metadata: String?) {
+        // Control points ship subtitle tracks in the DIDL-Lite metadata blob.
+        pendingSubtitles = DidlLite.parse(metadata)?.subtitleUrls.orEmpty()
+        onCastPlay(uri, 0.0)
+    }
+
+    override fun onSetNextUri(uri: String?, metadata: String?) {
+        val subtitles = DidlLite.parse(metadata)?.subtitleUrls.orEmpty()
+        mainHandler.post { castController?.setNext(uri, subtitles) }
+    }
 
     override fun onPlay() = onCastRate(1f)
 

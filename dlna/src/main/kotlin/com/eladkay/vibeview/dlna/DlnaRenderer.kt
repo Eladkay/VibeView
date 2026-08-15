@@ -1,5 +1,6 @@
 package com.eladkay.vibeview.dlna
 
+import com.eladkay.vibeview.dlna.internal.GenaSubscriptions
 import com.eladkay.vibeview.dlna.internal.SsdpResponder
 import com.eladkay.vibeview.dlna.internal.UpnpDevice
 import com.eladkay.vibeview.dlna.internal.UpnpHttpServer
@@ -22,6 +23,7 @@ class DlnaRenderer(
     private val listener: DlnaRendererListener,
 ) {
     private val eventLoopGroup = NioEventLoopGroup(2)
+    private val subscriptions = GenaSubscriptions()
     private var httpChannel: Channel? = null
     private var ssdp: SsdpResponder? = null
 
@@ -37,7 +39,7 @@ class DlnaRenderer(
         started = true
         try {
             val device = UpnpDevice(config, address)
-            httpChannel = UpnpHttpServer.start(eventLoopGroup, config.httpPort, device, listener)
+            httpChannel = UpnpHttpServer.start(eventLoopGroup, config.httpPort, device, listener, subscriptions)
             ssdp = SsdpResponder(config, address).also { it.start() }
             log.info("DLNA renderer '{}' started at http://{}:{}/", config.friendlyName, address.hostAddress, config.httpPort)
         } catch (e: Exception) {
@@ -46,7 +48,16 @@ class DlnaRenderer(
         }
     }
 
+    /**
+     * Pushes the current playback state to subscribed control points. Call whenever
+     * playback starts, stops, pauses, or the track changes.
+     */
+    fun notifyStateChanged(status: DlnaStatus) {
+        subscriptions.notifyTransportState(status, System.currentTimeMillis())
+    }
+
     fun stop() {
+        subscriptions.clear()
         ssdp?.stop()
         ssdp = null
         httpChannel?.close()
@@ -78,6 +89,9 @@ data class DlnaConfig(
 interface DlnaRendererListener {
     /** SetAVTransportURI: a control point set the media URL (with optional DIDL-Lite metadata). */
     fun onSetUri(uri: String, metadata: String?)
+
+    /** SetNextAVTransportURI: the item to play when the current one ends; null clears it. */
+    fun onSetNextUri(uri: String?, metadata: String?) {}
 
     /** Play. */
     fun onPlay()

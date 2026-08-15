@@ -70,6 +70,13 @@ internal class UpnpDevice(val config: DlnaConfig, val address: InetAddress) {
 
     fun isEventPath(path: String): Boolean = path == AVT_EVENT || path == RC_EVENT || path == CM_EVENT
 
+    /** Maps an event path to its service type; defaults to AVTransport. */
+    fun serviceTypeForEvent(path: String): String = when (path) {
+        RC_EVENT -> SERVICE_RC
+        CM_EVENT -> SERVICE_CM
+        else -> SERVICE_AVT
+    }
+
     companion object {
         const val DESCRIPTION_PATH = "/description.xml"
 
@@ -104,6 +111,11 @@ internal class UpnpDevice(val config: DlnaConfig, val address: InetAddress) {
       <argument><name>InstanceID</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_InstanceID</relatedStateVariable></argument>
       <argument><name>CurrentURI</name><direction>in</direction><relatedStateVariable>AVTransportURI</relatedStateVariable></argument>
       <argument><name>CurrentURIMetaData</name><direction>in</direction><relatedStateVariable>AVTransportURIMetaData</relatedStateVariable></argument>
+    </argumentList></action>
+    <action><name>SetNextAVTransportURI</name><argumentList>
+      <argument><name>InstanceID</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_InstanceID</relatedStateVariable></argument>
+      <argument><name>NextURI</name><direction>in</direction><relatedStateVariable>NextAVTransportURI</relatedStateVariable></argument>
+      <argument><name>NextURIMetaData</name><direction>in</direction><relatedStateVariable>NextAVTransportURIMetaData</relatedStateVariable></argument>
     </argumentList></action>
     <action><name>Play</name><argumentList>
       <argument><name>InstanceID</name><direction>in</direction><relatedStateVariable>A_ARG_TYPE_InstanceID</relatedStateVariable></argument>
@@ -166,6 +178,8 @@ internal class UpnpDevice(val config: DlnaConfig, val address: InetAddress) {
     <stateVariable sendEvents="no"><name>TransportState</name><dataType>string</dataType></stateVariable>
     <stateVariable sendEvents="no"><name>TransportStatus</name><dataType>string</dataType></stateVariable>
     <stateVariable sendEvents="no"><name>AVTransportURI</name><dataType>string</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>NextAVTransportURI</name><dataType>string</dataType></stateVariable>
+    <stateVariable sendEvents="no"><name>NextAVTransportURIMetaData</name><dataType>string</dataType></stateVariable>
     <stateVariable sendEvents="no"><name>A_ARG_TYPE_InstanceID</name><dataType>ui4</dataType></stateVariable>
     <stateVariable sendEvents="no"><name>A_ARG_TYPE_SeekMode</name><dataType>string</dataType></stateVariable>
     <stateVariable sendEvents="no"><name>A_ARG_TYPE_SeekTarget</name><dataType>string</dataType></stateVariable>

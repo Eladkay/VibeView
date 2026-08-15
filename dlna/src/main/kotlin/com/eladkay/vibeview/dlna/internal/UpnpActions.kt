@@ -22,6 +22,11 @@ internal object UpnpActions {
                 if (uri.isNotEmpty()) listener.onSetUri(uri, a["CurrentURIMetaData"])
                 ok(UpnpDevice.SERVICE_AVT, action)
             }
+            "SetNextAVTransportURI" -> {
+                val uri = a["NextURI"]?.trim().orEmpty()
+                listener.onSetNextUri(uri.ifEmpty { null }, a["NextURIMetaData"])
+                ok(UpnpDevice.SERVICE_AVT, action)
+            }
             "Play" -> { listener.onPlay(); ok(UpnpDevice.SERVICE_AVT, action) }
             "Pause" -> { listener.onPause(); ok(UpnpDevice.SERVICE_AVT, action) }
             "Stop" -> { listener.onStop(); ok(UpnpDevice.SERVICE_AVT, action) }

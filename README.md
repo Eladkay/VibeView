@@ -28,8 +28,16 @@ phones and other devices can cast media to it too.
 - **DLNA / UPnP renderer** — VibeView advertises itself as a MediaRenderer, so
   Android apps with "Play to"/"Cast to TV" (plus VLC, Windows "Cast to device",
   Plex, and others) can push a video, photo, or music **URL** that plays through
-  the same ExoPlayer path, with transport controls (play/pause/seek/volume).
-  This is media-URL casting, not live Android screen mirroring — see below.
+  the same ExoPlayer path, with transport controls (play/pause/seek/volume),
+  subtitles, a queued "next" track, and GENA events so the sender's UI follows
+  playback live. This is media-URL casting, not live Android screen mirroring —
+  see below.
+- **AirPlay speaker mode** — an audio-only AirPlay session shows a now-playing
+  screen with artwork, title/artist/album, and progress, parsed from the
+  metadata iOS sends alongside the stream.
+- **Diagnostics overlay** — an optional HUD (Advanced → Show diagnostics) with
+  frame rates, bitrate, decoder latency, queue depth, and codec, for checking
+  how a real session is behaving.
 - **Optional passcode** — require a code (shown on the TV) before an Apple device
   can mirror or cast, enforced with RTSP/HTTP Digest authentication.
 - **TV-friendly UI** — an idle screen with connection instructions, and a
@@ -145,9 +153,9 @@ and hands Annex-B video / raw audio frames to the app, which feeds them to
   cast **media URLs** to VibeView via DLNA ("Play to"/"Cast to TV"), which is
   what most "cast a video" apps use. Full Android screen mirroring would require
   a separate companion sender app.
-- The DLNA renderer answers control-point polling for playback state; it does
-  not push GENA event notifications, so a few control points may not show live
-  progress even though play/pause/seek work.
+- Subtitles are picked up from the DIDL-Lite metadata a control point sends
+  (`<res>` subtitle tracks or Samsung-style `sec:CaptionInfo`). A control point
+  that sends none can't be given subtitles by the receiver.
 - One sender at a time; multi-room audio (AirPlay 2 group playback) is out of
   scope.
 - The AirPlay protocol is unofficial and reverse-engineered; new iOS/macOS

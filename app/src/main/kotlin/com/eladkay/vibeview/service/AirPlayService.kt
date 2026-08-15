@@ -51,6 +51,7 @@ class AirPlayService : Service() {
         val stoppingDlna = dlnaRenderer
         server = null
         dlnaRenderer = null
+        ReceiverSessionHub.attachDlna(null)
         thread(name = "AirPlayStop") {
             runCatching { stopping?.stop() }
             runCatching { stoppingDlna?.stop() }
@@ -92,6 +93,7 @@ class AirPlayService : Service() {
                         )
                         renderer.start(address)
                         dlnaRenderer = renderer
+                        ReceiverSessionHub.attachDlna(renderer)
                     }.onFailure { Log.w(TAG, "DLNA renderer failed to start", it) }
                 }
 

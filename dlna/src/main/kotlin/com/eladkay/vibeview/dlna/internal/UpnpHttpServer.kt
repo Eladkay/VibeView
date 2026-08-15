@@ -30,6 +30,7 @@ import java.util.UUID
 internal class UpnpControlHandler(
     private val device: UpnpDevice,
     private val listener: DlnaRendererListener,
+    private val subscriptions: GenaSubscriptions,
 ) : SimpleChannelInboundHandler<FullHttpRequest>() {
 
     override fun channelRead0(ctx: ChannelHandlerContext, request: FullHttpRequest) {
@@ -47,7 +48,7 @@ internal class UpnpControlHandler(
                 handleControl(ctx, request, device.serviceTypeForControl(path)!!)
 
             (method == "SUBSCRIBE" || method == "UNSUBSCRIBE") && device.isEventPath(path) ->
-                handleSubscription(ctx, request, method)
+                handleSubscription(ctx, request, method, path)
 
             else -> sendStatus(ctx, request, HttpResponseStatus.NOT_FOUND)
         }
@@ -75,16 +76,40 @@ internal class UpnpControlHandler(
     }
 
     /**
-     * Accepts GENA subscriptions so control points are satisfied. We do not push NOTIFY
-     * events; control points poll GetPositionInfo/GetTransportInfo, which we answer live.
+     * GENA subscribe/renew/unsubscribe. A SUBSCRIBE carrying CALLBACK is a new
+     * subscription; one carrying SID renews an existing one.
      */
-    private fun handleSubscription(ctx: ChannelHandlerContext, request: FullHttpRequest, method: String) {
+    private fun handleSubscription(
+        ctx: ChannelHandlerContext,
+        request: FullHttpRequest,
+        method: String,
+        path: String,
+    ) {
         val response = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
-        if (method == "SUBSCRIBE") {
-            val sid = request.headers().get("SID") ?: "uuid:${UUID.randomUUID()}"
+        val existingSid = request.headers().get("SID")
+        val now = System.currentTimeMillis()
+        val timeout = GenaSubscriptions.DEFAULT_TIMEOUT_SECONDS
+
+        if (method == "UNSUBSCRIBE") {
+            subscriptions.unsubscribe(existingSid)
+            finish(ctx, request, response)
+            return
+        }
+
+        val sid = when {
+            existingSid != null && subscriptions.renew(existingSid, timeout, now) -> existingSid
+            else -> subscriptions.subscribe(
+                request.headers().get("CALLBACK"),
+                device.serviceTypeForEvent(path),
+                timeout,
+                now,
+            )
+        }
+        if (sid == null) {
+            response.status = HttpResponseStatus.PRECONDITION_FAILED
+        } else {
             response.headers().set("SID", sid)
-            response.headers().set("TIMEOUT", "Second-1800")
-            response.headers().set("Server", SERVER)
+            response.headers().set("TIMEOUT", "Second-$timeout")
         }
         finish(ctx, request, response)
     }
@@ -144,6 +169,7 @@ internal object UpnpHttpServer {
         port: Int,
         device: UpnpDevice,
         listener: DlnaRendererListener,
+        subscriptions: GenaSubscriptions,
     ): Channel {
         val bootstrap = ServerBootstrap()
             .group(group)
@@ -154,7 +180,7 @@ internal object UpnpHttpServer {
                     ch.pipeline().addLast(
                         HttpServerCodec(),
                         HttpObjectAggregator(1024 * 1024),
-                        UpnpControlHandler(device, listener),
+                        UpnpControlHandler(device, listener, subscriptions),
                     )
                 }
             })

@@ -1,10 +1,13 @@
 package com.eladkay.vibeview.media
 
 import android.content.Context
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -82,14 +85,47 @@ class CastPlayerController(
         handler.post(statusUpdater)
     }
 
-    fun play(url: String, startFraction: Double) {
+    @JvmOverloads
+    fun play(url: String, startFraction: Double, subtitleUrls: List<String> = emptyList()) {
         pendingStartFraction = startFraction
         startPositionApplied = startFraction <= 0.0
         onState(CastState.LOADING)
-        player.setMediaItem(MediaItem.fromUri(url))
+        player.setMediaItem(buildMediaItem(url, subtitleUrls))
         player.playWhenReady = true
         player.prepare()
     }
+
+    /** Queues the item to play when the current one finishes; null clears the queue. */
+    fun setNext(url: String?, subtitleUrls: List<String> = emptyList()) {
+        // Index 0 is the current item, so anything beyond it is the pending "next".
+        while (player.mediaItemCount > 1) {
+            player.removeMediaItem(player.mediaItemCount - 1)
+        }
+        if (url != null) player.addMediaItem(buildMediaItem(url, subtitleUrls))
+    }
+
+    private fun buildMediaItem(url: String, subtitleUrls: List<String>): MediaItem {
+        val builder = MediaItem.Builder().setUri(url)
+        if (subtitleUrls.isNotEmpty()) {
+            builder.setSubtitleConfigurations(
+                subtitleUrls.map { subtitleUrl ->
+                    MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitleUrl))
+                        .setMimeType(mimeTypeFor(subtitleUrl))
+                        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                        .build()
+                }
+            )
+        }
+        return builder.build()
+    }
+
+    private fun mimeTypeFor(url: String): String =
+        when (url.substringAfterLast('.', "").substringBefore('?').lowercase()) {
+            "vtt", "webvtt" -> MimeTypes.TEXT_VTT
+            "ssa", "ass" -> MimeTypes.TEXT_SSA
+            "ttml", "dfxp", "xml" -> MimeTypes.APPLICATION_TTML
+            else -> MimeTypes.APPLICATION_SUBRIP
+        }
 
     fun setRate(rate: Float) {
         player.playWhenReady = rate > 0f
